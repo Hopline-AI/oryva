@@ -2,88 +2,129 @@
 
 ## Product principles
 
-Copy from the generators that won (Stainless, Fern, Speakeasy):
+Match what Stainless, Speakeasy and Fern ship:
 
-- Output that reads as if a person wrote it.
-- Sell maintenance, not generation: regenerate on every spec change, open a PR, and keep the
-  customer's hand edits (three-way merge).
+- Output that reads as if a person wrote it, in every language a customer asks for.
+- Sell maintenance, not generation: regenerate on every spec change, open a PR, keep the
+  customer's own code, and block breaking changes.
 
-Be different:
+Then go further:
 
-- Quality is measured by agents, and every release ships the score.
-- The agent surface is generated from the same model as the SDK, so it can't drift.
+- Agents score every release: lint for agent-facing problems, live task runs, published numbers.
+- The agent surface is generated from the same model as the SDKs, so it can't drift.
 - Guardrails for APIs that change things: scopes, confirmation before destructive calls,
   spending limits.
-- Door in: import `stainless.yml` and prove the public API didn't change.
+- A way in for teams leaving Stainless: import `stainless.yml` and prove the public API didn't
+  change.
 
-## Phase 0 — agent tests
+## Feature parity
 
-- [x] `oryva-eval`: connect to any MCP server over stdio, list its tools, lint them (no model needed)
-- [x] Run task files against Claude; report pass rate, tokens, tool calls, tool errors, recoveries (tested with a scripted model; no live run yet)
-- [x] Task file for `sarvam-mcp==0.2.13`
+What the leading generators ship, and where oryva stands. "Leaders" means at least two of
+Stainless, Speakeasy and Fern.
 
-Done when: run against `sarvam-mcp==0.2.13` it flags the "Max 10 pages" description (wrong
-since the limits were raised) and the retired `text_analytics` tool. Needs `SARVAM_API_KEY`
-and `ANTHROPIC_API_KEY`.
+| Feature | Leaders | oryva | Wave |
+|---|---|---|---|
+| OpenAPI 3.0 / 3.1 input | yes | done | — |
+| Python SDK | yes | basic | 1 |
+| TypeScript SDK | yes | — | 1 |
+| Go, Java, Kotlin, C#, PHP, Ruby | yes | — | 4 |
+| Typed models, typed errors | yes | done (Python) | 1 |
+| Retries with backoff, `Retry-After` | yes | done (Python) | 1 |
+| Pagination with auto-paging | yes | — | 1 |
+| Server-sent event streaming | yes | — | 1 |
+| Async client (Python) | yes | — | 1 |
+| Auth: API key, bearer, basic, OAuth2 client credentials | yes | key + bearer | 1 |
+| Environments (multiple servers) | yes | — | 1 |
+| Idempotency keys | Stainless | — | 1 |
+| Per-request options, raw responses | yes | — | 1 |
+| Forward-compatible enums and unions | Speakeasy | — | 1 |
+| Omitted vs null | Stainless | — | 1 |
+| Webhook verification and parsing | Stainless, Fern | — | 1 |
+| File upload and download | yes | upload (Python) | 1 |
+| MCP server | Stainless, Speakeasy | done (Python) | 2 |
+| Generated tests against a mock server | Speakeasy, APIMatic | — | 2 |
+| SDK READMEs with an example per method | yes | basic | 2 |
+| API reference docs, `llms.txt` | Fern | — | 2 |
+| Keep custom code across regenerations | yes | — | 3 |
+| Breaking-change detection | Speakeasy | — | 3 |
+| Versioning, changelog, publishing to PyPI / npm | yes | — | 3 |
+| GitHub integration: regeneration PRs | yes | — | 3 |
+| Config file: rename, hide, group endpoints; spec overlays | yes | x-oryva extensions | 5 |
+| CLI target | Stainless | — | 5 |
+| Terraform provider | Speakeasy | — | 5 |
+| WebSockets | partial | — | 5 |
+| Agent lint of any MCP server | — | done | — |
+| Live agent scoring | — | done | — |
+| Destructive / read-only / idempotent tool flags | partial | done | — |
 
-## Phase 1 — spec → Python SDK + MCP server
+## Done
 
-- [x] `oryva-spec`: OpenAPI 3.0/3.1 → IR, snapshot-tested on `fixtures/specs`
-- [x] `oryva-emit-python`: IR → Python SDK
-- [x] `oryva-emit-python`: IR → MCP server wrapping the SDK
-- [x] `oryva` CLI: `generate` and `eval`
-- [x] End to end: `sarvam-lite.yaml` → SDK + MCP server → lint passes, smoke test passes
-  (`scripts/smoke-python.sh`; also type-checks both packages with mypy)
-- [ ] When a field has no description but its named type does, use the type's description in
-  tool schemas and docstrings (the lint flags `target_language_code` today)
+- `oryva-eval`: lint any MCP server; run task files with Claude; report pass rate, tokens
+  (cache traffic included), tool errors, recoveries. Live runs work (`scripts/live-eval.sh`).
+- `oryva-spec`: OpenAPI 3.0/3.1 → IR v1, snapshot-tested.
+- `oryva-emit-python`: Python SDK and MCP server from IR v1; smoke test installs both, calls them
+  against a stub API, type-checks them with mypy and lints the server.
+- `oryva` CLI: `generate` and `eval`.
 
-Done when: the generated SDK type-checks and passes tests against a local stub server, and the
-generated MCP server scores at least as well as a hand-written one on the same tasks. The first
-two hold; the comparison needs a live run with `ANTHROPIC_API_KEY`.
+## Wave 1 — the SDK features every leader has (in progress)
 
-- [ ] Deriving a spec from an existing SDK, for APIs with no public spec (Sarvam publishes none).
-  Models, enums, signatures and routes can be recovered; limits, error types and auth details
-  may not be, so those get proposed and a person reviews them once.
+- [x] IR v2: environments, auth schemes, idempotency header, pagination, event streams, binary
+  bodies, defaults, integer enums, discriminators, webhooks
+- [x] `fixtures/specs/ledger.yaml`, a neutral fixture that exercises all of it
+- [ ] `oryva-spec` produces IR v2 from `ledger.yaml`
+- [ ] Python SDK implements the behaviour contract in `CLAUDE.md`, sync and async
+- [ ] TypeScript SDK implements the behaviour contract
+- [ ] Smoke tests for both languages run against a `ledger` stub; the live eval moves to `ledger`
 
-## Phase 2 — the maintenance loop
+Done when: both SDKs pass end-to-end checks for every row of the behaviour contract against the
+stub, type-check (`mypy`, `tsc`), and the generated MCP server still lints clean.
 
-- [ ] Generated code lives in `_gen/` and is never edited by hand. Everything outside `_gen/`
-  is owned source that regeneration never touches. This replaces three-way merging; add
-  `git merge-file` only if a customer must edit generated files.
-- [ ] Regenerate on spec change
-- [ ] Block breaking changes (`griffe check` for Python)
+## Wave 2 — tests, docs and the agent surface
+
+- [ ] Generated test suite in each SDK, run against a mock built from the spec's examples
+- [ ] README per SDK with a working example for every method; API reference; `llms.txt`
+- [ ] MCP server aware of pagination and streaming; code mode (search docs + run code against
+  the SDK) for large APIs
+- [ ] When a field has no description but its named type does, use the type's description
+- [ ] Live eval of the generated MCP server against `ledger` in CI
+
+## Wave 3 — the maintenance loop
+
+- [ ] Generated code in `_gen/`, never edited by hand; everything else is owned code that
+  regeneration never touches
+- [ ] Breaking-change gate (`griffe check` for Python, `api-extractor` for TypeScript)
+- [ ] Version bumps and changelogs from the spec diff
+- [ ] Publishing workflows for PyPI and npm
 - [ ] GitHub Action that opens the regeneration PR
 
-Done when: a spec change produces a clean PR and nothing outside `_gen/` changed.
+## Wave 4 — more languages
 
-## Phase 3 — TypeScript SDK + `stainless.yml` import
+Go, then Java and Kotlin, then C#, PHP and Ruby, each against the same behaviour contract and
+the same conformance checks.
 
-- [ ] Conformance suite: a stub API server, language-neutral check files under `conformance/`,
-  and one small runner per target language, so every language is held to the same expected
-  output. A change touches `conformance/` or implementation code, never both in one commit, so
-  a test can't be weakened to make code pass; `scripts/verify.sh` enforces this once the
-  directory exists.
-- [ ] Differential check against the customer's existing SDK: send the same calls through the
-  old SDK and the regenerated one against the stub server, and compare requests and results.
-  The old SDK is the oracle.
+## Wave 5 — configuration and reach
 
-Done when: one public ex-Stainless SDK regenerates with zero public API changes and the
-differential check passes.
+- [ ] `oryva.yml`: rename, hide and group endpoints; OpenAPI overlays to patch weak specs
+- [ ] `stainless.yml` import with a public-API diff against the old SDK
+- [ ] Derive a spec from an existing SDK when there is none
+- [ ] CLI and Terraform targets; WebSockets
 
-## Proof, for every phase
+## Proof, for every wave
 
 - Mutation check: inject bugs into generated code; the checks must catch at least 90%.
-- Accuracy is measured on cases the builders never saw, and published.
+- Conformance: the same language-neutral checks run against every SDK.
 
 ## Known risks
 
-- Nobody has shown they will pay yet. Talk to real API companies alongside the build.
+- Nobody has shown they will pay yet. Talk to API companies alongside the build.
 - Customers' own coding agents are probably the biggest competitor.
 - Plain generation is commoditising. The moat is measured proof and the edge cases collected
   over time, not the generator code.
-- The hand-written layer (WebSockets, streaming, auth flows) is where spec generators stop.
-  Sarvam's speech APIs need WebSockets, so streaming is first in line after Phase 2.
 
-## Phase 4 — code mode, guardrails, hosted GitHub App
+## Outreach
 
-Start only once a design partner is live.
+Material for specific companies lives under `examples/`.
+
+- `examples/sarvam`: an approximate spec and a task file for their hand-written `sarvam-mcp`.
+  A live comparison needs `SARVAM_API_KEY`.
+- Teams leaving Stainless: wave 5's import is the way in.

@@ -3,5 +3,8 @@
     "commit": "",
     "pr": "",
     "sessionUrl": false
+  },
+  "worktree": {
+    "baseRef": "head"
   }
 }
