@@ -18,9 +18,9 @@ Be different:
 
 ## Phase 0 — agent tests
 
-- [ ] `oryva-eval`: connect to any MCP server over stdio, list its tools, lint them (no model needed)
-- [ ] Run task files against Claude; report pass rate, tokens, tool calls, tool errors, recoveries
-- [ ] Task file for `sarvam-mcp==0.2.13`
+- [x] `oryva-eval`: connect to any MCP server over stdio, list its tools, lint them (no model needed)
+- [x] Run task files against Claude; report pass rate, tokens, tool calls, tool errors, recoveries (tested with a scripted model; no live run yet)
+- [x] Task file for `sarvam-mcp==0.2.13`
 
 Done when: run against `sarvam-mcp==0.2.13` it flags the "Max 10 pages" description (wrong
 since the limits were raised) and the retired `text_analytics` tool. Needs `SARVAM_API_KEY`
@@ -28,9 +28,9 @@ and `ANTHROPIC_API_KEY`.
 
 ## Phase 1 — spec → Python SDK + MCP server
 
-- [ ] `oryva-spec`: OpenAPI 3.0/3.1 → IR, snapshot-tested on `fixtures/specs`
-- [ ] `oryva-emit-python`: IR → Python SDK
-- [ ] `oryva-emit-python`: IR → MCP server wrapping the SDK
+- [x] `oryva-spec`: OpenAPI 3.0/3.1 → IR, snapshot-tested on `fixtures/specs`
+- [x] `oryva-emit-python`: IR → Python SDK
+- [x] `oryva-emit-python`: IR → MCP server wrapping the SDK
 - [ ] `oryva` CLI: `generate` and `eval`
 - [ ] End to end: `sarvam-lite.yaml` → SDK + MCP server → lint passes, smoke test passes
 
