@@ -1,0 +1,51 @@
+# Agent tests for the hand-written Sarvam MCP server.
+# Needs SARVAM_API_KEY (real calls) and ANTHROPIC_API_KEY. `--lint-only` needs neither.
+# Run from the repo root so the relative PDF path resolves.
+server:
+  command: uvx
+  args: ["sarvam-mcp==0.2.13"]
+  env:
+    SARVAM_API_KEY: ${SARVAM_API_KEY:-dummy}
+    SARVAM_MCP_BASE_PATH: ${SARVAM_MCP_BASE_PATH:-/tmp/sarvam-mcp-eval}
+model: claude-opus-5-5
+effort: medium
+max_turns: 12
+tasks:
+  - id: translate-hindi
+    prompt: Translate "Good morning" into Hindi.
+    expect:
+      tools_called: [sarvam_tools_translate]
+      max_tool_errors: 0
+      max_tool_calls: 4
+
+  - id: identify-language
+    prompt: 'Which language is this written in: "நீங்கள் எப்படி இருக்கிறீர்கள்?"'
+    expect:
+      tools_called: [sarvam_tools_identify_language]
+      answer_contains: [tamil]
+      max_tool_errors: 0
+      max_tool_calls: 3
+
+  - id: tts-to-file
+    prompt: Turn "Namaste, welcome to our store" into Hindi speech and save the audio to a file. Tell me the file path.
+    expect:
+      tools_called: [sarvam_tools_tts_speak]
+      max_tool_errors: 0
+      max_tool_calls: 5
+
+  # The obvious tool for this, sarvam_tools_text_analytics, was removed upstream and always
+  # errors. This task is meant to fail on max_tool_errors, which is the signal we want to see.
+  - id: review-sentiment
+    prompt: 'What is the sentiment of this review: "The delivery was late and the box was crushed, but support refunded me quickly."'
+    expect:
+      tools_called: [sarvam_tools_text_analytics]
+      max_tool_errors: 0
+      max_tool_calls: 4
+
+  - id: parse-15-page-pdf
+    prompt: Parse the PDF at fixtures/evals/files/15-pages.pdf and give me its text as markdown. Do not split it into parts.
+    expect:
+      tools_called: [sarvam_tools_vision_parse]
+      tools_not_called: [sarvam_tools_vision_split]
+      max_tool_errors: 0
+      max_tool_calls: 4

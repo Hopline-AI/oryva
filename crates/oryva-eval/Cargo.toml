@@ -1,0 +1,21 @@
+[package]
+name = "oryva-eval"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+# MCP server used by the tests (and handy for trying the CLI); not part of the public API.
+name = "oryva-test-server"
+path = "tests/support/test_server.rs"
+test = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+serde-saphyr = "0.0"
+rmcp = { version = "3", features = ["client", "server", "macros", "transport-child-process", "transport-io"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+async-trait = "0.1"
+thiserror = "2"
