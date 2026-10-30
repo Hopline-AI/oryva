@@ -63,10 +63,25 @@ finish something.
 | `fixtures/specs` | Input specs. `sarvam-lite.yaml` is a hand-written approximation, not Sarvam's spec. | |
 | `fixtures/evals` | Agent-test task files | |
 
+## Testing
+
+Tests prove the end goal, not the code that happened to be written.
+
+- Start from what a caller sees: an SDK user, an agent, a CLI user. Take expected values from
+  the spec or the original SDK, never from the code under test.
+- Every feature gets at least one end-to-end check through its real entry point: the CLI, a
+  generated client against a stub server, a real MCP session.
+- Mock only external boundaries (the network, the model API). Never mock the thing under test.
+- Watch a new test fail before trusting it: break the code on purpose and confirm the test
+  catches it, then restore.
+- Delete tests that restate the code, only check that something exists, or pin formatting
+  nobody relies on.
+
 ## Working rules
 
 - `scripts/verify.sh` is the definition of done: it must exit 0 before you report anything as
   finished. While iterating, scope it: `scripts/verify.sh -p <crate>`.
+- When a STOP condition in your brief matches, stop and report. Don't improvise around it.
 - Snapshot tests use `insta`. Read every new snapshot before accepting it.
 - `cargo test` never touches the network. Agent tests use a scripted fake model; live runs need
   `ANTHROPIC_API_KEY`. Smoke scripts under `scripts/` may install packages.
@@ -88,4 +103,17 @@ finish something.
 ## Agents
 
 The main agent (a larger model) owns design, the IR, reviews and merges. Implementation work
-goes to subagents on Sonnet, one crate each, each in its own git worktree.
+goes to subagents, one crate each, each in its own git worktree.
+
+| Work | Model |
+|---|---|
+| Tiny and mechanical, where a wrong result is obvious from the checks | Haiku |
+| Clear work in one area, or following an existing pattern | Sonnet |
+| New architecture or hard judgement | Opus |
+
+Whoever builds doesn't verify. Before merging a branch, the main agent (or a fresh read-only
+agent) reruns `scripts/verify.sh` on it and does a mutation check: inject one small bug into
+code the new tests cover, confirm a test fails, restore. A branch whose tests don't catch the
+bug doesn't merge.
+
+When an agent gets something wrong twice, add a line to this file.

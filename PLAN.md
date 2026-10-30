@@ -37,17 +37,48 @@ and `ANTHROPIC_API_KEY`.
 Done when: the generated SDK type-checks and passes tests against a local stub server, and the
 generated MCP server scores at least as well as a hand-written one on the same tasks.
 
+- [ ] Deriving a spec from an existing SDK, for APIs with no public spec (Sarvam publishes none).
+  Models, enums, signatures and routes can be recovered; limits, error types and auth details
+  may not be, so those get proposed and a person reviews them once.
+
 ## Phase 2 — the maintenance loop
 
-- [ ] Regenerate on spec change and re-apply hand edits (`git merge-file`)
+- [ ] Generated code lives in `_gen/` and is never edited by hand. Everything outside `_gen/`
+  is owned source that regeneration never touches. This replaces three-way merging; add
+  `git merge-file` only if a customer must edit generated files.
+- [ ] Regenerate on spec change
 - [ ] Block breaking changes (`griffe check` for Python)
 - [ ] GitHub Action that opens the regeneration PR
 
-Done when: a spec change produces a clean PR with hand edits intact.
+Done when: a spec change produces a clean PR and nothing outside `_gen/` changed.
 
 ## Phase 3 — TypeScript SDK + `stainless.yml` import
 
-Done when: one public ex-Stainless SDK regenerates with zero public API changes.
+- [ ] Conformance suite: a stub API server, language-neutral check files under `conformance/`,
+  and one small runner per target language, so every language is held to the same expected
+  output. A change touches `conformance/` or implementation code, never both in one commit, so
+  a test can't be weakened to make code pass; `scripts/verify.sh` enforces this once the
+  directory exists.
+- [ ] Differential check against the customer's existing SDK: send the same calls through the
+  old SDK and the regenerated one against the stub server, and compare requests and results.
+  The old SDK is the oracle.
+
+Done when: one public ex-Stainless SDK regenerates with zero public API changes and the
+differential check passes.
+
+## Proof, for every phase
+
+- Mutation check: inject bugs into generated code; the checks must catch at least 90%.
+- Accuracy is measured on cases the builders never saw, and published.
+
+## Known risks
+
+- Nobody has shown they will pay yet. Talk to real API companies alongside the build.
+- Customers' own coding agents are probably the biggest competitor.
+- Plain generation is commoditising. The moat is measured proof and the edge cases collected
+  over time, not the generator code.
+- The hand-written layer (WebSockets, streaming, auth flows) is where spec generators stop.
+  Sarvam's speech APIs need WebSockets, so streaming is first in line after Phase 2.
 
 ## Phase 4 — code mode, guardrails, hosted GitHub App
 
