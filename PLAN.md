@@ -31,11 +31,15 @@ and `ANTHROPIC_API_KEY`.
 - [x] `oryva-spec`: OpenAPI 3.0/3.1 → IR, snapshot-tested on `fixtures/specs`
 - [x] `oryva-emit-python`: IR → Python SDK
 - [x] `oryva-emit-python`: IR → MCP server wrapping the SDK
-- [ ] `oryva` CLI: `generate` and `eval`
-- [ ] End to end: `sarvam-lite.yaml` → SDK + MCP server → lint passes, smoke test passes
+- [x] `oryva` CLI: `generate` and `eval`
+- [x] End to end: `sarvam-lite.yaml` → SDK + MCP server → lint passes, smoke test passes
+  (`scripts/smoke-python.sh`; also type-checks both packages with mypy)
+- [ ] When a field has no description but its named type does, use the type's description in
+  tool schemas and docstrings (the lint flags `target_language_code` today)
 
 Done when: the generated SDK type-checks and passes tests against a local stub server, and the
-generated MCP server scores at least as well as a hand-written one on the same tasks.
+generated MCP server scores at least as well as a hand-written one on the same tasks. The first
+two hold; the comparison needs a live run with `ANTHROPIC_API_KEY`.
 
 - [ ] Deriving a spec from an existing SDK, for APIs with no public spec (Sarvam publishes none).
   Models, enums, signatures and routes can be recovered; limits, error types and auth details
