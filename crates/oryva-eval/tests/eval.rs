@@ -74,6 +74,7 @@ fn tool_use(calls: &[(&str, &str, Value)], extra: Option<Value>) -> ModelRespons
         usage: Usage {
             input_tokens: 100,
             output_tokens: 10,
+            cache_write_tokens: 400,
             cache_read_tokens: 50,
         },
     }
@@ -87,6 +88,7 @@ fn end(text: &str) -> ModelResponse {
         usage: Usage {
             input_tokens: 200,
             output_tokens: 20,
+            cache_write_tokens: 0,
             cache_read_tokens: 0,
         },
     }
@@ -163,9 +165,10 @@ tasks:
         (
             echo.input_tokens,
             echo.output_tokens,
+            echo.cache_write_tokens,
             echo.cache_read_tokens
         ),
-        (300, 30, 50)
+        (300, 30, 400, 50)
     );
 
     assert!(flaky.passed, "{:?}", flaky.failures);
@@ -198,6 +201,10 @@ tasks:
     assert_eq!((s.tasks, s.passed), (3, 1 + 1));
     assert!((s.pass_rate - 2.0 / 3.0).abs() < 1e-9);
     assert_eq!((s.tool_errors, s.recoveries), (2, 1));
+    // Tokens per task counts everything the model processed, cache traffic included.
+    assert_eq!(echo.total_tokens(), 300 + 30 + 400 + 50);
+    let mean = report.tasks.iter().map(|t| t.total_tokens()).sum::<u64>() as f64 / 3.0;
+    assert!((s.mean_tokens_per_task - mean).abs() < 1e-9);
     let text = report.to_string();
     assert!(text.contains("retired-fails") && text.contains("FAIL") && text.contains("Summary"));
     assert_eq!(

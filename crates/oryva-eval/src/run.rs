@@ -30,6 +30,7 @@ pub struct TaskReport {
     pub recoveries: usize,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    pub cache_write_tokens: u64,
     pub cache_read_tokens: u64,
     pub truncations: usize,
     pub duration_ms: u64,
@@ -41,7 +42,8 @@ pub struct Summary {
     pub tasks: usize,
     pub passed: usize,
     pub pass_rate: f64,
-    /// Mean of input + output tokens (cache reads excluded) per task.
+    /// Mean tokens the model processed per task: input, cache writes, cache reads and output.
+    /// Cache reads are billed lower but still fill the context, so they count.
     pub mean_tokens_per_task: f64,
     pub tool_errors: usize,
     pub recoveries: usize,
@@ -73,11 +75,7 @@ pub async fn run(file: &TaskFile, model: &dyn Model) -> Result<RunReport, Error>
         tasks: tasks.len(),
         passed,
         pass_rate: passed as f64 / n,
-        mean_tokens_per_task: tasks
-            .iter()
-            .map(|t| t.input_tokens + t.output_tokens)
-            .sum::<u64>() as f64
-            / n,
+        mean_tokens_per_task: tasks.iter().map(TaskReport::total_tokens).sum::<u64>() as f64 / n,
         tool_errors: tasks.iter().map(|t| t.tool_errors).sum(),
         recoveries: tasks.iter().map(|t| t.recoveries).sum(),
     };
@@ -115,6 +113,7 @@ async fn run_task(
         recoveries: 0,
         input_tokens: 0,
         output_tokens: 0,
+        cache_write_tokens: 0,
         cache_read_tokens: 0,
         truncations: 0,
         duration_ms: 0,
@@ -144,6 +143,7 @@ async fn run_task(
         };
         r.input_tokens += resp.usage.input_tokens;
         r.output_tokens += resp.usage.output_tokens;
+        r.cache_write_tokens += resp.usage.cache_write_tokens;
         r.cache_read_tokens += resp.usage.cache_read_tokens;
         // The assistant turn goes back exactly as received.
         messages.push(json!({"role": "assistant", "content": resp.content}));
@@ -291,12 +291,18 @@ fn truncate(text: String) -> (String, bool) {
     (t, true)
 }
 
+impl TaskReport {
+    pub fn total_tokens(&self) -> u64 {
+        self.input_tokens + self.cache_write_tokens + self.cache_read_tokens + self.output_tokens
+    }
+}
+
 impl fmt::Display for RunReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Run: model {}", self.model)?;
         writeln!(
             f,
-            "{:<28} {:<5} {:>5} {:>5} {:>6} {:>5} {:>8} {:>8} {:>8} {:>6} {:>8}",
+            "{:<28} {:<5} {:>5} {:>5} {:>6} {:>5} {:>8} {:>8} {:>8} {:>8} {:>6} {:>8}",
             "task",
             "result",
             "turns",
@@ -305,6 +311,7 @@ impl fmt::Display for RunReport {
             "recov",
             "in tok",
             "out tok",
+            "cache wr",
             "cache rd",
             "trunc",
             "secs"
@@ -312,7 +319,7 @@ impl fmt::Display for RunReport {
         for t in &self.tasks {
             writeln!(
                 f,
-                "{:<28} {:<6} {:>5} {:>5} {:>6} {:>5} {:>8} {:>8} {:>8} {:>6} {:>8.1}",
+                "{:<28} {:<6} {:>5} {:>5} {:>6} {:>5} {:>8} {:>8} {:>8} {:>8} {:>6} {:>8.1}",
                 t.id,
                 if t.passed { "pass" } else { "FAIL" },
                 t.turns,
@@ -321,6 +328,7 @@ impl fmt::Display for RunReport {
                 t.recoveries,
                 t.input_tokens,
                 t.output_tokens,
+                t.cache_write_tokens,
                 t.cache_read_tokens,
                 t.truncations,
                 t.duration_ms as f64 / 1000.0

@@ -30,6 +30,8 @@ pub struct Usage {
     pub output_tokens: u64,
     #[serde(default, rename = "cache_read_input_tokens")]
     pub cache_read_tokens: u64,
+    #[serde(default, rename = "cache_creation_input_tokens")]
+    pub cache_write_tokens: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
