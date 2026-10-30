@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 
 tmp="$(mktemp -d)"
 stub=""
-trap 'kill "$stub" 2>/dev/null; wait "$stub" 2>/dev/null; rm -rf "$tmp"' EXIT
+trap 'kill "$stub" 2>/dev/null; wait "$stub" 2>/dev/null || true; rm -rf "$tmp"' EXIT
 
 cargo build -q -p oryva
 target/debug/oryva generate fixtures/specs/sarvam-lite.yaml --out "$tmp/out" >/dev/null
