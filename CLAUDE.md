@@ -78,7 +78,12 @@ finish something.
 - Keep it small: no abstraction with one implementation, no config for a value that never
   changes. Generated code must read as if a person wrote it.
 - Git: commits are authored by `Khushiyant <khushiyant2002@gmail.com>` from the global config;
-  never set a repo-local identity. No `Co-Authored-By` or other AI-attribution lines. Never push.
+  never set a repo-local identity. No `Co-Authored-By` or other AI-attribution lines.
+- Commit messages follow Conventional Commits: `type(scope): imperative summary`, lowercase
+  after the colon. Scopes are crate names without the `oryva-` prefix (`ir`, `spec`,
+  `emit-python`, `eval`, `cli`).
+- The repo is public at github.com/Hopline-AI/oryva. Only the main agent pushes, and only
+  after `scripts/verify.sh` passes on the merged result. Subagents never push.
 
 ## Agents
 
