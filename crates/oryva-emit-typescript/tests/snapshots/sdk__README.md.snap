@@ -1,0 +1,42 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+# Ledger API: TypeScript SDK
+
+Customers, invoices, payments and refunds for small businesses.
+
+Zero runtime dependencies. Uses the platform's `fetch` and Web Crypto, so it runs on Node 18+,
+browsers and edge runtimes.
+
+## Usage
+
+```ts
+import Ledger from 'ledger';
+
+const client = new Ledger({ apiKey: process.env['LEDGER_API_KEY'] });
+```
+
+Every credential option falls back to an environment variable:
+
+- `apiKey`: `LEDGER_API_KEY`
+- `clientId`: `LEDGER_CLIENT_ID`
+- `clientSecret`: `LEDGER_CLIENT_SECRET`
+
+## Environments
+
+Pass `environment` or any `baseURL`, or set `LEDGER_BASE_URL`:
+
+- `production`: https://api.ledger.example (default)
+- `sandbox`: https://sandbox.ledger.example
+
+## Requests
+
+Every method takes request options last: `timeout`, `maxRetries`, `headers`, `query`, `body`,
+`signal` and `idempotencyKey`. Failed requests (connection errors, 408, 409, 429, 5xx)
+are retried twice, honouring `Retry-After`. Every non-GET request carries an
+`Idempotency-Key` header that stays the same across retries.
+
+Call `.withResponse()` on any call to get `{ data, response }`.
+
+Set `LEDGER_LOG=debug` to log requests; credentials are redacted.

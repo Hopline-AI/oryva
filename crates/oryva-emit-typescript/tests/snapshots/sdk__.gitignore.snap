@@ -1,0 +1,6 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+node_modules
+dist

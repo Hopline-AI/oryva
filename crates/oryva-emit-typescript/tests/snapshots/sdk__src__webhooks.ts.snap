@@ -1,0 +1,112 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+import { getCrypto } from './core.js';
+import { LedgerError, WebhookVerificationError } from './errors.js';
+import type { InvoicePaidEvent, PaymentFailedEvent } from './types.js';
+
+/** Every event this API delivers to your webhook endpoint. */
+export type UnwrapWebhookEvent = InvoicePaidEvent | PaymentFailedEvent;
+
+export type WebhookHeaders = Headers | Record<string, string | string[] | undefined>;
+
+/** Seconds a webhook's timestamp may differ from the local clock. */
+const TOLERANCE_SECONDS = 300;
+
+/**
+ * Verifies and parses webhooks signed with the Standard Webhooks scheme
+ * (https://www.standardwebhooks.com).
+ */
+export class Webhooks {
+  constructor(private readonly secret: string | undefined) {}
+
+  /**
+   * Checks the signature and timestamp of a webhook, then returns the typed event. Pass the raw
+   * request body exactly as received, not re-serialized JSON.
+   *
+   * @param secret Defaults to the client's `webhookSecret` (`LEDGER_WEBHOOK_SECRET`).
+   * @throws {WebhookVerificationError} when the signature, timestamp or headers are wrong.
+   */
+  async unwrap(
+    body: string | Uint8Array,
+    headers: WebhookHeaders,
+    secret: string | undefined = this.secret,
+  ): Promise<UnwrapWebhookEvent> {
+    const text = typeof body === 'string' ? body : new TextDecoder().decode(body);
+    await this.verifySignature(text, headers, secret);
+    try {
+      return JSON.parse(text) as UnwrapWebhookEvent;
+    } catch (cause) {
+      throw new WebhookVerificationError('Webhook body is not valid JSON', { cause });
+    }
+  }
+
+  /** Like `unwrap`, but returns nothing. */
+  async verifySignature(
+    body: string | Uint8Array,
+    headers: WebhookHeaders,
+    secret: string | undefined = this.secret,
+  ): Promise<void> {
+    if (!secret) {
+      throw new LedgerError(
+        'Missing webhook secret: pass `webhookSecret` or set LEDGER_WEBHOOK_SECRET',
+      );
+    }
+    const id = header(headers, 'webhook-id');
+    const timestamp = header(headers, 'webhook-timestamp');
+    const signatures = header(headers, 'webhook-signature');
+    if (!id || !timestamp || !signatures) {
+      throw new WebhookVerificationError(
+        'Missing webhook-id, webhook-timestamp or webhook-signature header',
+      );
+    }
+    const age = Math.floor(Date.now() / 1000) - Number(timestamp);
+    if (Number.isNaN(age)) throw new WebhookVerificationError('Invalid webhook-timestamp header');
+    if (Math.abs(age) > TOLERANCE_SECONDS) {
+      throw new WebhookVerificationError(
+        `Webhook timestamp is ${Math.abs(age)}s ${
+          age > 0 ? 'old' : 'in the future'
+        }; the limit is ${TOLERANCE_SECONDS}s`,
+      );
+    }
+
+    const { subtle } = await getCrypto();
+    const raw = secret.startsWith('whsec_') ? secret.slice('whsec_'.length) : secret;
+    const key = await subtle.importKey(
+      'raw',
+      base64ToBytes(raw) as BufferSource,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify'],
+    );
+    const text = typeof body === 'string' ? body : new TextDecoder().decode(body);
+    const signed = new TextEncoder().encode(`${id}.${timestamp}.${text}`);
+    for (const candidate of signatures.split(' ')) {
+      const [version, signature] = candidate.split(',');
+      if (version !== 'v1' || !signature) continue;
+      // `verify` compares in constant time.
+      if (await subtle.verify('HMAC', key, base64ToBytes(signature) as BufferSource, signed)) {
+        return;
+      }
+    }
+    throw new WebhookVerificationError('No matching signature found for this webhook');
+  }
+}
+
+function header(headers: WebhookHeaders, name: string): string | undefined {
+  if (headers instanceof Headers) return headers.get(name) ?? undefined;
+  const key = Object.keys(headers).find((k) => k.toLowerCase() === name);
+  const value = key === undefined ? undefined : headers[key];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  try {
+    return Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
+  } catch (cause) {
+    throw new WebhookVerificationError('Webhook secret or signature is not valid base64', {
+      cause,
+    });
+  }
+}

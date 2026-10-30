@@ -1,0 +1,130 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+import type { Uploadable } from './uploads.js';
+
+/** ISO 4217 currency code, lowercase. */
+export type Currency = 'usd' | 'eur' | 'gbp' | 'inr' | (string & {});
+
+export interface Customer {
+  id: string;
+  name: string;
+  email?: string | null;
+  /** Your own key-value pairs. */
+  metadata?: { [key: string]: string };
+  created_at: string;
+}
+
+export interface LineItem {
+  description: string;
+  /** Amount in the currency's smallest unit, e.g. cents. */
+  amount: number;
+  /** @default 1 */
+  quantity?: number;
+}
+
+export interface Invoice {
+  id: string;
+  customer_id: string;
+  status: 'draft' | 'open' | 'paid' | 'void' | (string & {});
+  currency: Currency;
+  line_items: Array<LineItem>;
+  total: number;
+  /** How many payment reminders have been sent. */
+  reminder_level?: 0 | 1 | 2 | (number & {});
+  due_date?: string | null;
+}
+
+export interface Payment {
+  id: string;
+  invoice_id: string;
+  amount: number;
+  status: 'pending' | 'succeeded' | 'failed' | (string & {});
+  failure_reason?: string | null;
+}
+
+export interface Refund {
+  id: string;
+  payment_id: string;
+  amount: number;
+  reason?: 'duplicate' | 'fraudulent' | 'requested_by_customer' | (string & {});
+}
+
+export interface File {
+  id: string;
+  filename: string;
+  size_bytes: number;
+}
+
+export interface InvoicePaidEvent {
+  type: 'invoice.paid';
+  invoice: Invoice;
+}
+
+export interface PaymentFailedEvent {
+  type: 'payment.failed';
+  payment: Payment;
+}
+
+/** Discriminated by `type`. A server newer than this SDK may send a value not listed here. */
+export type Event = InvoicePaidEvent | PaymentFailedEvent;
+
+export interface Error {
+  error: ErrorError;
+}
+
+export interface ErrorError {
+  code: string;
+  message: string;
+  /** The request field the error is about, if any. */
+  param?: string | null;
+}
+
+export interface CustomersListResponse {
+  data: Array<Customer>;
+  next_cursor?: string | null;
+}
+
+export interface CustomersCreateRequest {
+  name: string;
+  email?: string | null;
+  metadata?: { [key: string]: string };
+}
+
+export interface CustomersUpdateRequest {
+  name?: string;
+  /** Send null to remove the email. */
+  email?: string | null;
+  metadata?: { [key: string]: string };
+}
+
+export interface InvoicesListResponse {
+  data: Array<Invoice>;
+  total: number;
+}
+
+export interface InvoicesCreateRequest {
+  customer_id: string;
+  /** @default 'usd' */
+  currency?: Currency;
+  line_items: Array<LineItem>;
+  due_date?: string;
+}
+
+export interface PaymentsListResponse {
+  items: Array<Payment>;
+  total_pages?: number;
+}
+
+export interface RefundsCreateRequest {
+  payment_id: string;
+  /** Smallest currency unit. Omit to refund the full remaining amount. */
+  amount?: number;
+  reason?: 'duplicate' | 'fraudulent' | 'requested_by_customer' | (string & {});
+}
+
+export interface FilesUploadRequest {
+  file: Uploadable;
+  purpose?: 'receipt' | 'contract' | (string & {});
+}

@@ -1,0 +1,92 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+import {
+  type APIPromise,
+  type BaseClient,
+  type PagePromise,
+  type RequestOptions,
+} from '../core.js';
+import type { Invoice, InvoicesCreateRequest, InvoicesListResponse } from '../types.js';
+
+/** Requests for payment. */
+export class Invoices {
+  constructor(private readonly client: BaseClient) {}
+
+  /** List invoices. */
+  list(
+    params: InvoicesListParams = {},
+    options?: RequestOptions,
+  ): PagePromise<Invoice, InvoicesListResponse> {
+    return this.client.requestPage<Invoice, InvoicesListResponse>({
+      method: 'GET',
+      path: '/invoices',
+      query: params,
+      pagination: { style: 'offset', offsetParam: 'offset', limitParam: 'limit', items: ['data'] },
+    }, options);
+  }
+
+  /** Create a draft invoice. */
+  create(params: InvoicesCreateParams, options?: RequestOptions): APIPromise<Invoice> {
+    return this.client.request<Invoice>(
+      { method: 'POST', path: '/invoices', body: params },
+      options,
+    );
+  }
+
+  /** Fetch one invoice. */
+  get(invoiceId: string, options?: RequestOptions): APIPromise<Invoice> {
+    return this.client.request<Invoice>({
+      method: 'GET',
+      path: `/invoices/${encodeURIComponent(invoiceId)}`,
+    }, options);
+  }
+
+  /**
+   * Turn a draft invoice into an open one and email it to the customer.
+   *
+   * Agent hint: Emails the customer immediately; this can't be undone.
+   */
+  finalize(invoiceId: string, options?: RequestOptions): APIPromise<Invoice> {
+    return this.client.request<Invoice>({
+      method: 'POST',
+      path: `/invoices/${encodeURIComponent(invoiceId)}/finalize`,
+    }, options);
+  }
+
+  /**
+   * Void an open invoice so it can no longer be paid.
+   *
+   * Agent hint: Permanent. Only open invoices can be voided.
+   */
+  void(invoiceId: string, options?: RequestOptions): APIPromise<Invoice> {
+    return this.client.request<Invoice>({
+      method: 'POST',
+      path: `/invoices/${encodeURIComponent(invoiceId)}/void`,
+    }, options);
+  }
+
+  /** Download the invoice as a PDF. */
+  downloadPdf(invoiceId: string, options?: RequestOptions): APIPromise<Response> {
+    return this.client.request<Response>({
+      method: 'GET',
+      path: `/invoices/${encodeURIComponent(invoiceId)}/pdf`,
+      response: 'binary',
+    }, options);
+  }
+}
+
+export interface InvoicesListParams {
+  /**
+   * Maximum items per page (at most 100).
+   *
+   * @default 20
+   */
+  limit?: number;
+  /** @default 0 */
+  offset?: number;
+  status?: 'draft' | 'open' | 'paid' | 'void' | (string & {});
+}
+
+export type InvoicesCreateParams = InvoicesCreateRequest;

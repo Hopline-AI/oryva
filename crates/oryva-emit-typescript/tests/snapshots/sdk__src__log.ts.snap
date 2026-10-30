@@ -1,0 +1,52 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+export type LogLevel = 'off' | 'error' | 'warn' | 'info' | 'debug';
+
+/** Anything shaped like `console`. */
+export interface Logger {
+  error(...args: unknown[]): void;
+  warn(...args: unknown[]): void;
+  info(...args: unknown[]): void;
+  debug(...args: unknown[]): void;
+}
+
+const LEVELS: LogLevel[] = ['off', 'error', 'warn', 'info', 'debug'];
+
+export function parseLogLevel(value: string | undefined): LogLevel | undefined {
+  const level = value?.toLowerCase() as LogLevel | undefined;
+  return level && LEVELS.includes(level) ? level : undefined;
+}
+
+/** Wraps `logger` so that only messages at or below `level` get through. */
+export function levelLogger(logger: Logger, level: LogLevel): Logger {
+  const enabled = (at: LogLevel) => LEVELS.indexOf(level) >= LEVELS.indexOf(at);
+  return {
+    error: (...args) => enabled('error') && logger.error(...args),
+    warn: (...args) => enabled('warn') && logger.warn(...args),
+    info: (...args) => enabled('info') && logger.info(...args),
+    debug: (...args) => enabled('debug') && logger.debug(...args),
+  };
+}
+
+const SENSITIVE_HEADERS = ['authorization', 'proxy-authorization', 'cookie', 'set-cookie'];
+
+/** Header values with credentials replaced by `***`. */
+export function redactHeaders(headers: Headers, extra: string[]): Record<string, string> {
+  const hidden = [...SENSITIVE_HEADERS, ...extra.map((h) => h.toLowerCase())];
+  const out: Record<string, string> = {};
+  headers.forEach((value, name) => {
+    out[name] = hidden.includes(name.toLowerCase()) ? '***' : value;
+  });
+  return out;
+}
+
+/** The URL with credential query parameters replaced by `***`. */
+export function redactURL(url: URL, sensitiveQuery: string[]): string {
+  const copy = new URL(url);
+  for (const name of sensitiveQuery) {
+    if (copy.searchParams.has(name)) copy.searchParams.set(name, '***');
+  }
+  return copy.toString();
+}

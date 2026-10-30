@@ -1,0 +1,5 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+export const VERSION = '2026.10.1';

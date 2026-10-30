@@ -1,0 +1,41 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+import { type APIPromise, type BaseClient, pick, type RequestOptions } from '../core.js';
+import type { File, FilesUploadRequest } from '../types.js';
+import type { Uploadable } from '../uploads.js';
+
+/** Attachments such as receipts. */
+export class Files {
+  constructor(private readonly client: BaseClient) {}
+
+  /** Upload a file, such as a receipt, as a multipart form. */
+  upload(params: FilesUploadParams, options?: RequestOptions): APIPromise<File> {
+    return this.client.request<File>({
+      method: 'POST',
+      path: '/files',
+      body: params,
+      encoding: 'multipart',
+    }, options);
+  }
+
+  /** Upload a file as the raw request body. */
+  uploadRaw(params: FilesUploadRawParams, options?: RequestOptions): APIPromise<File> {
+    return this.client.request<File>({
+      method: 'POST',
+      path: '/files/raw',
+      query: pick(params, ['filename']),
+      body: params.body,
+      encoding: 'binary',
+    }, options);
+  }
+}
+
+export type FilesUploadParams = FilesUploadRequest;
+
+export interface FilesUploadRawParams {
+  /** The request body. */
+  body: Uploadable;
+  filename: string;
+}

@@ -1,0 +1,43 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+import {
+  type APIPromise,
+  type BaseClient,
+  type PagePromise,
+  type RequestOptions,
+} from '../core.js';
+import type { Payment, PaymentsListResponse } from '../types.js';
+
+/** Money received. */
+export class Payments {
+  constructor(private readonly client: BaseClient) {}
+
+  /** List payments. */
+  list(
+    params: PaymentsListParams = {},
+    options?: RequestOptions,
+  ): PagePromise<Payment, PaymentsListResponse> {
+    return this.client.requestPage<Payment, PaymentsListResponse>({
+      method: 'GET',
+      path: '/payments',
+      query: params,
+      pagination: { style: 'page', pageParam: 'page', items: ['items'] },
+    }, options);
+  }
+
+  /** Fetch one payment. */
+  get(paymentId: string, options?: RequestOptions): APIPromise<Payment> {
+    return this.client.request<Payment>({
+      method: 'GET',
+      path: `/payments/${encodeURIComponent(paymentId)}`,
+    }, options);
+  }
+}
+
+export interface PaymentsListParams {
+  /** @default 1 */
+  page?: number;
+  invoice_id?: string;
+}

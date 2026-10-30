@@ -1,0 +1,25 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+import { type APIPromise, type BaseClient, type RequestOptions } from '../core.js';
+import type { Stream } from '../streaming.js';
+import type { Event } from '../types.js';
+
+/** A live feed of account activity. */
+export class Events {
+  constructor(private readonly client: BaseClient) {}
+
+  /**
+   * Stream account events as they happen.
+   *
+   * Agent hint: Long-lived. Read a few events and stop; don't wait for the stream to end.
+   */
+  stream(options?: RequestOptions): APIPromise<Stream<Event>> {
+    return this.client.request<Stream<Event>>({
+      method: 'GET',
+      path: '/events/stream',
+      response: 'stream',
+    }, options);
+  }
+}

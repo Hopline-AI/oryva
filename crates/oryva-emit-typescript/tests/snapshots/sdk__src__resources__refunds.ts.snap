@@ -1,0 +1,22 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+import { type APIPromise, type BaseClient, type RequestOptions } from '../core.js';
+import type { Refund, RefundsCreateRequest } from '../types.js';
+
+/** Money returned. */
+export class Refunds {
+  constructor(private readonly client: BaseClient) {}
+
+  /**
+   * Refund all or part of a payment.
+   *
+   * Agent hint: Moves money back to the customer and can't be reversed. Check the payment's amount first; a refund can't exceed what's left to refund.
+   */
+  create(params: RefundsCreateParams, options?: RequestOptions): APIPromise<Refund> {
+    return this.client.request<Refund>({ method: 'POST', path: '/refunds', body: params }, options);
+  }
+}
+
+export type RefundsCreateParams = RefundsCreateRequest;

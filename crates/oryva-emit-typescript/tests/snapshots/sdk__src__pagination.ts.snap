@@ -1,0 +1,85 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+import { LedgerError } from './errors.js';
+
+/** How a list endpoint pages. Paths are field names from the response root. */
+export type PageSpec =
+  | { style: 'cursor'; param: string; nextCursor: string[]; items: string[] }
+  | { style: 'offset'; offsetParam: string; limitParam: string; items: string[] }
+  | { style: 'page'; pageParam: string; items: string[] };
+
+type Query = Record<string, unknown>;
+
+function at(value: unknown, path: string[]): unknown {
+  return path.reduce<unknown>(
+    (current, key) => (current as Record<string, unknown> | null | undefined)?.[key],
+    value,
+  );
+}
+
+/**
+ * One page of a list. `for await (const item of page)` walks every item on this page and all
+ * the pages after it.
+ */
+export class Page<Item, Resp = unknown> implements AsyncIterable<Item> {
+  /** The items on this page. */
+  readonly items: Item[];
+
+  constructor(
+    private readonly fetchPage: (query: Query) => Promise<Page<Item, Resp>>,
+    /** The full response body, including fields such as `total`. */
+    readonly response: Resp,
+    private readonly query: Query,
+    private readonly spec: PageSpec,
+  ) {
+    const items = at(response, spec.items);
+    this.items = Array.isArray(items) ? (items as Item[]) : [];
+  }
+
+  private nextQuery(): Query | undefined {
+    if (this.items.length === 0) return undefined;
+    const spec = this.spec;
+    switch (spec.style) {
+      case 'cursor': {
+        const cursor = at(this.response, spec.nextCursor);
+        return cursor === undefined || cursor === null
+          ? undefined
+          : { ...this.query, [spec.param]: cursor };
+      }
+      case 'offset': {
+        const offset = Number(this.query[spec.offsetParam] ?? 0) + this.items.length;
+        return { ...this.query, [spec.offsetParam]: offset };
+      }
+      case 'page': {
+        const page = Number(this.query[spec.pageParam] ?? 1) + 1;
+        return { ...this.query, [spec.pageParam]: page };
+      }
+    }
+  }
+
+  hasNextPage(): boolean {
+    return this.nextQuery() !== undefined;
+  }
+
+  async getNextPage(): Promise<Page<Item, Resp>> {
+    const query = this.nextQuery();
+    if (!query) throw new LedgerError('No more pages; check hasNextPage() first');
+    return this.fetchPage(query);
+  }
+
+  /** Yields this page and every page after it. */
+  async *iterPages(): AsyncGenerator<Page<Item, Resp>> {
+    let page: Page<Item, Resp> = this;
+    yield page;
+    while (page.hasNextPage()) {
+      page = await page.getNextPage();
+      yield page;
+    }
+  }
+
+  async *[Symbol.asyncIterator](): AsyncGenerator<Item> {
+    for await (const page of this.iterPages()) yield* page.items;
+  }
+}

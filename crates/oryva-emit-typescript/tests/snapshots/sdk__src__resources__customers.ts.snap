@@ -1,0 +1,117 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+import {
+  type APIPromise,
+  type BaseClient,
+  type PagePromise,
+  type RequestOptions,
+  warnDeprecated,
+} from '../core.js';
+import type {
+  Customer,
+  CustomersCreateRequest,
+  CustomersListResponse,
+  CustomersUpdateRequest,
+} from '../types.js';
+
+/** People and companies you bill. */
+export class Customers {
+  constructor(private readonly client: BaseClient) {}
+
+  /** List customers, newest first. */
+  list(
+    params: CustomersListParams = {},
+    options?: RequestOptions,
+  ): PagePromise<Customer, CustomersListResponse> {
+    return this.client.requestPage<Customer, CustomersListResponse>({
+      method: 'GET',
+      path: '/customers',
+      query: params,
+      pagination: {
+        style: 'cursor',
+        param: 'starting_after',
+        nextCursor: ['next_cursor'],
+        items: ['data'],
+      },
+    }, options);
+  }
+
+  /** Create a customer. */
+  create(params: CustomersCreateParams, options?: RequestOptions): APIPromise<Customer> {
+    return this.client.request<Customer>(
+      { method: 'POST', path: '/customers', body: params },
+      options,
+    );
+  }
+
+  /**
+   * Search customers by name.
+   *
+   * @deprecated Use `customers.list` with `email` instead.
+   */
+  search(params: CustomersSearchParams, options?: RequestOptions): APIPromise<Array<Customer>> {
+    warnDeprecated('customers.search', 'Use `customers.list` with `email` instead.');
+    return this.client.request<Array<Customer>>({
+      method: 'GET',
+      path: '/customers/search',
+      query: params,
+    }, options);
+  }
+
+  /** Fetch one customer. */
+  get(customerId: string, options?: RequestOptions): APIPromise<Customer> {
+    return this.client.request<Customer>({
+      method: 'GET',
+      path: `/customers/${encodeURIComponent(customerId)}`,
+    }, options);
+  }
+
+  /** Change a customer's name, email or metadata. */
+  update(
+    customerId: string,
+    params: CustomersUpdateParams,
+    options?: RequestOptions,
+  ): APIPromise<Customer> {
+    return this.client.request<Customer>({
+      method: 'PATCH',
+      path: `/customers/${encodeURIComponent(customerId)}`,
+      body: params,
+    }, options);
+  }
+
+  /**
+   * Delete a customer and all their unpaid invoices.
+   *
+   * Agent hint: Permanent, and also deletes the customer's draft and open invoices. Fetch the customer first and confirm with the user.
+   */
+  delete(customerId: string, options?: RequestOptions): APIPromise<void> {
+    return this.client.request<void>({
+      method: 'DELETE',
+      path: `/customers/${encodeURIComponent(customerId)}`,
+      response: 'empty',
+    }, options);
+  }
+}
+
+export interface CustomersListParams {
+  /**
+   * Maximum items per page (at most 100).
+   *
+   * @default 20
+   */
+  limit?: number;
+  /** Cursor from the previous page's `next_cursor`. */
+  starting_after?: string;
+  /** Only customers with exactly this email. */
+  email?: string;
+}
+
+export type CustomersCreateParams = CustomersCreateRequest;
+
+export interface CustomersSearchParams {
+  q: string;
+}
+
+export type CustomersUpdateParams = CustomersUpdateRequest;

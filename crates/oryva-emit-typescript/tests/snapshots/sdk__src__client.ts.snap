@@ -1,0 +1,120 @@
+---
+source: crates/oryva-emit-typescript/tests/generate.rs
+expression: content
+---
+import { type AuthRequest, BaseClient, type CommonOptions, readEnv } from './core.js';
+import { LedgerError } from './errors.js';
+import { ClientCredentials } from './oauth.js';
+import { Customers } from './resources/customers.js';
+import { Events } from './resources/events.js';
+import { Files } from './resources/files.js';
+import { Invoices } from './resources/invoices.js';
+import { Payments } from './resources/payments.js';
+import { Refunds } from './resources/refunds.js';
+import { VERSION } from './version.js';
+import { Webhooks } from './webhooks.js';
+
+/** The named servers. Pick one with the `environment` option. */
+export const ENVIRONMENTS = {
+  production: 'https://api.ledger.example',
+  sandbox: 'https://sandbox.ledger.example',
+} as const;
+
+export type Environment = keyof typeof ENVIRONMENTS;
+
+export interface ClientOptions extends CommonOptions {
+  /** Defaults to `process.env['LEDGER_API_KEY']`. */
+  apiKey?: string | undefined;
+  /** Defaults to `process.env['LEDGER_CLIENT_ID']`. */
+  clientId?: string | undefined;
+  /** Defaults to `process.env['LEDGER_CLIENT_SECRET']`. */
+  clientSecret?: string | undefined;
+  /** Where to fetch OAuth2 tokens. Defaults to `process.env['LEDGER_OAUTH_TOKEN_URL']`, then https://auth.ledger.example/oauth/token. */
+  tokenURL?: string | undefined;
+  /** Signing secret for `client.webhooks.unwrap`. Defaults to `process.env['LEDGER_WEBHOOK_SECRET']`. */
+  webhookSecret?: string | undefined;
+  /** Which server to call. Default `production`. */
+  environment?: Environment | undefined;
+  /** Overrides `environment`. Defaults to `process.env['LEDGER_BASE_URL']`. */
+  baseURL?: string | undefined;
+}
+
+function resolveBaseURL(options: ClientOptions): string {
+  if (options.environment !== undefined && !(options.environment in ENVIRONMENTS)) {
+    const known = Object.keys(ENVIRONMENTS).join(', ');
+    throw new LedgerError(`Unknown environment '${options.environment}'; use one of ${known}`);
+  }
+  return (
+    options.baseURL
+      ?? (options.environment && ENVIRONMENTS[options.environment])
+      ?? readEnv('LEDGER_BASE_URL')
+      ?? ENVIRONMENTS.production
+  );
+}
+
+/**
+ * Ledger API
+ *
+ * Customers, invoices, payments and refunds for small businesses.
+ *
+ * ```ts
+ * const client = new Ledger();
+ * ```
+ */
+export class Ledger extends BaseClient {
+  readonly apiKey: string | undefined;
+  readonly clientId: string | undefined;
+  readonly clientSecret: string | undefined;
+  private readonly oauth: ClientCredentials | undefined;
+  readonly customers: Customers;
+  readonly invoices: Invoices;
+  readonly payments: Payments;
+  readonly refunds: Refunds;
+  readonly files: Files;
+  readonly events: Events;
+  readonly webhooks: Webhooks;
+
+  constructor(options: ClientOptions = {}) {
+    super({
+      ...options,
+      baseURL: resolveBaseURL(options),
+      version: VERSION,
+      sensitiveHeaders: [],
+      sensitiveQuery: [],
+    });
+    this.apiKey = options.apiKey ?? readEnv('LEDGER_API_KEY');
+    this.clientId = options.clientId ?? readEnv('LEDGER_CLIENT_ID');
+    this.clientSecret = options.clientSecret ?? readEnv('LEDGER_CLIENT_SECRET');
+    if (this.clientId && this.clientSecret) {
+      this.oauth = new ClientCredentials({
+        tokenURL: options.tokenURL ?? readEnv('LEDGER_OAUTH_TOKEN_URL')
+          ?? 'https://auth.ledger.example/oauth/token',
+        clientId: this.clientId,
+        clientSecret: this.clientSecret,
+        scopes: ['ledger.read', 'ledger.write'],
+        fetch: (url, init) => this.fetch(url, init),
+      });
+    }
+    this.customers = new Customers(this);
+    this.invoices = new Invoices(this);
+    this.payments = new Payments(this);
+    this.refunds = new Refunds(this);
+    this.files = new Files(this);
+    this.events = new Events(this);
+    this.webhooks = new Webhooks(options.webhookSecret ?? readEnv('LEDGER_WEBHOOK_SECRET'));
+  }
+
+  protected override async authenticate(request: AuthRequest): Promise<void> {
+    if (this.apiKey) {
+      request.headers.set('authorization', `Bearer ${this.apiKey}`);
+      return;
+    }
+    if (this.oauth) {
+      request.headers.set('authorization', `Bearer ${await this.oauth.getToken()}`);
+      return;
+    }
+    throw new LedgerError(
+      'Missing credentials: pass them as client options or set LEDGER_API_KEY, or set LEDGER_CLIENT_ID and LEDGER_CLIENT_SECRET',
+    );
+  }
+}
