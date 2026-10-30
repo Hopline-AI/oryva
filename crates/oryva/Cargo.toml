@@ -1,0 +1,13 @@
+[package]
+name = "oryva"
+description = "An SDK generator built for agents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+oryva-spec = { path = "../oryva-spec" }
+oryva-emit-python = { path = "../oryva-emit-python" }
+oryva-eval = { path = "../oryva-eval" }
+serde_json.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
