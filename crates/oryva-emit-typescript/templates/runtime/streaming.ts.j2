@@ -1,0 +1,69 @@
+import { {{ c.error }} } from './errors.js';
+
+/**
+ * Server-sent events, parsed as JSON. Iterate with `for await`; stop early with `break` or
+ * `controller.abort()`, either of which closes the connection.
+ */
+export class Stream<Item> implements AsyncIterable<Item> {
+  private consumed = false;
+
+  constructor(
+    private readonly response: Response,
+    /** Aborting it ends the iteration and closes the connection. */
+    readonly controller: AbortController,
+  ) {}
+
+  async *[Symbol.asyncIterator](): AsyncGenerator<Item, void, undefined> {
+    if (this.consumed) throw new {{ c.error }}('Cannot iterate over a stream twice');
+    this.consumed = true;
+    try {
+      for await (const data of serverSentData(this.response, this.controller.signal)) {
+        let event: Item;
+        try {
+          event = JSON.parse(data) as Item;
+        } catch (cause) {
+          throw new {{ c.error }}(`Could not parse event data as JSON: ${data}`, { cause });
+        }
+        yield event;
+      }
+    } finally {
+      this.controller.abort();
+    }
+  }
+
+  /** Closes the connection. */
+  close(): void {
+    this.controller.abort();
+  }
+}
+
+/** Yields the `data` of each event, joining multi-line data. Ends quietly when aborted. */
+async function* serverSentData(response: Response, signal: AbortSignal): AsyncGenerator<string> {
+  if (!response.body) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let data: string[] = [];
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r\n|\r|\n/);
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (line === '') {
+          if (data.length) yield data.join('\n');
+          data = [];
+        } else if (line.startsWith('data:')) {
+          data.push(line.slice(5).replace(/^ /, ''));
+        }
+      }
+    }
+    if (data.length) yield data.join('\n');
+  } catch (error) {
+    if (!signal.aborted) throw error;
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+}

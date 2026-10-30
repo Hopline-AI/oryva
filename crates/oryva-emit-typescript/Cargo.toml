@@ -1,0 +1,16 @@
+[package]
+name = "oryva-emit-typescript"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+oryva-ir.workspace = true
+minijinja = "2"
+dprint-plugin-typescript = "0.96"
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+tempfile = "3"

@@ -1,0 +1,67 @@
+/**
+ * Anything that can be uploaded: a `Blob` or `File`, raw bytes, a `ReadableStream` or a `Response`
+ * (for example another download). Streams are read into memory first so a retry can resend them.
+ */
+export type Uploadable =
+  | Blob
+  | File
+  | Uint8Array
+  | ArrayBuffer
+  | ReadableStream<Uint8Array>
+  | Response;
+
+/** Gives bytes a filename and content type for multipart uploads. Needs a runtime with `File`. */
+export async function toFile(
+  data: Uploadable,
+  name: string,
+  options: { type?: string } = {},
+): Promise<File> {
+  const blob = await toBlob(data);
+  return new File([blob], name, { type: options.type ?? blob.type });
+}
+
+export function isUploadable(value: unknown): value is Uploadable {
+  return (
+    value instanceof Blob ||
+    value instanceof Uint8Array ||
+    value instanceof ArrayBuffer ||
+    value instanceof Response ||
+    (typeof ReadableStream !== 'undefined' && value instanceof ReadableStream)
+  );
+}
+
+export async function toBlob(value: Uploadable): Promise<Blob> {
+  if (value instanceof Blob) return value;
+  if (value instanceof Uint8Array || value instanceof ArrayBuffer) return new Blob([value as BlobPart]);
+  if (value instanceof Response) return value.blob();
+  return new Response(value).blob();
+}
+
+/** Encodes `body` as a multipart form. Files keep their name; `null` and `undefined` are skipped. */
+export async function toMultipart(body: Record<string, unknown>): Promise<FormData> {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(body)) {
+    if (value === undefined || value === null) continue;
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (isUploadable(item)) {
+        const blob = await toBlob(item);
+        form.append(key, blob, 'name' in blob ? String(blob.name) : 'upload');
+      } else {
+        form.append(key, typeof item === 'object' ? JSON.stringify(item) : String(item));
+      }
+    }
+  }
+  return form;
+}
+
+/** Encodes `body` as `application/x-www-form-urlencoded`. */
+export function toURLEncoded(body: Record<string, unknown>): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(body)) {
+    if (value === undefined || value === null) continue;
+    for (const item of Array.isArray(value) ? value : [value]) {
+      params.append(key, typeof item === 'object' ? JSON.stringify(item) : String(item));
+    }
+  }
+  return params;
+}

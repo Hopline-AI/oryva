@@ -1,0 +1,50 @@
+import { APIConnectionError } from './errors.js';
+import { makeAPIError } from './core.js';
+
+export interface ClientCredentialsOptions {
+  tokenURL: string;
+  clientId: string;
+  clientSecret: string;
+  scopes: string[];
+  /** Sends the token request. */
+  fetch: (url: string, init: RequestInit) => Promise<Response>;
+}
+
+/** Exchanges a client id and secret for a bearer token, caches it, and renews it a minute early. */
+export class ClientCredentials {
+  private token: { value: string; expiresAt: number } | undefined;
+  private pending: Promise<string> | undefined;
+
+  constructor(private readonly options: ClientCredentialsOptions) {}
+
+  async getToken(): Promise<string> {
+    if (this.token && Date.now() < this.token.expiresAt - 60_000) return this.token.value;
+    this.pending ??= this.fetchToken().finally(() => {
+      this.pending = undefined;
+    });
+    return this.pending;
+  }
+
+  private async fetchToken(): Promise<string> {
+    const { tokenURL, clientId, clientSecret, scopes } = this.options;
+    const form = new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: clientId,
+      client_secret: clientSecret,
+    });
+    if (scopes.length) form.set('scope', scopes.join(' '));
+    let response: Response;
+    try {
+      response = await this.options.fetch(tokenURL, { method: 'POST', body: form });
+    } catch (cause) {
+      throw new APIConnectionError({ message: `Could not reach the token URL ${tokenURL}`, cause });
+    }
+    if (!response.ok) throw await makeAPIError(response);
+    const { access_token, expires_in } = (await response.json()) as {
+      access_token: string;
+      expires_in?: number;
+    };
+    this.token = { value: access_token, expiresAt: Date.now() + (expires_in ?? 3600) * 1000 };
+    return access_token;
+  }
+}

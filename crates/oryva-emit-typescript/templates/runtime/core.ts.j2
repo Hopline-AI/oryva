@@ -1,0 +1,426 @@
+import {
+  APIConnectionError,
+  APIConnectionTimeoutError,
+  APIError,
+  APIUserAbortError,
+} from './errors.js';
+import {
+  type Logger,
+  type LogLevel,
+  levelLogger,
+  parseLogLevel,
+  redactHeaders,
+  redactURL,
+} from './log.js';
+import { Page, type PageSpec } from './pagination.js';
+import { Stream } from './streaming.js';
+import { type Uploadable, toBlob, toMultipart, toURLEncoded } from './uploads.js';
+
+export type { Logger, LogLevel };
+
+export type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+/** Options accepted by every method as its last argument. They win over client-level settings. */
+export interface RequestOptions {
+  /** Milliseconds to wait for response headers before giving up. */
+  timeout?: number;
+  /** How often to retry a failed request. */
+  maxRetries?: number;
+  /** Extra headers. A `null` value removes a header the SDK would otherwise send. */
+  headers?: Record<string, string | null | undefined>;
+  /** Extra query parameters. */
+  query?: Record<string, unknown>;
+  /** Extra fields merged into the request body. */
+  body?: Record<string, unknown>;
+  /** Aborting it cancels the request, including its retries. */
+  signal?: AbortSignal | null;
+{% if c.idempotency %}
+  /** Sent as the `{{ c.idempotency }}` header instead of a generated key. Reused across retries. */
+  idempotencyKey?: string;
+{% endif %}
+}
+
+/** Settings shared by every client. */
+export interface CommonOptions {
+  /** Milliseconds to wait for response headers. Default 60000. */
+  timeout?: number;
+  /** Retries after a connection error, 408, 409, 429 or 5xx. Default 2. */
+  maxRetries?: number;
+  /** A `fetch` implementation to use instead of the global one. */
+  fetch?: Fetch;
+  /** Headers sent with every request. */
+  defaultHeaders?: Record<string, string | null | undefined>;
+  /** `off`, `error`, `warn` (default), `info` or `debug`. Also read from `{{ c.log_env }}`. */
+  logLevel?: LogLevel;
+  /** Where log lines go. Default `console`. */
+  logger?: Logger;
+}
+
+export interface ClientSettings extends CommonOptions {
+  baseURL: string;
+  version: string;
+  sensitiveHeaders: string[];
+  sensitiveQuery: string[];
+}
+
+export interface AuthRequest {
+  headers: Headers;
+  query: Record<string, string>;
+}
+
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export interface RequestSpec {
+  method: Method;
+  path: string;
+  /** Query parameters. `undefined` and `null` values are left out. */
+  query?: object | undefined;
+  headers?: object | undefined;
+  /** The body: an object for JSON, multipart and form bodies, an `Uploadable` for binary ones. */
+  body?: unknown;
+  encoding?: 'json' | 'multipart' | 'form' | 'binary';
+  /** How to read the response. Default `json`. */
+  response?: 'json' | 'text' | 'binary' | 'empty' | 'stream';
+}
+
+/** A sent request: the response headers have arrived, the body is unread. */
+interface Sent {
+  response: Response;
+  controller: AbortController;
+}
+
+/**
+ * A promise for a parsed response that can also hand back the raw `Response`:
+ * `await client.x.get(id)` gives the data, `.withResponse()` gives `{ data, response }`, and
+ * `.asResponse()` gives the `Response` without reading its body.
+ */
+export class APIPromise<T> extends Promise<T> {
+  private parsed: Promise<T> | undefined;
+
+  constructor(
+    private readonly sent: Promise<Sent>,
+    private readonly parseResponse: (sent: Sent) => Promise<T>,
+  ) {
+    super((resolve) => resolve(undefined as never));
+  }
+
+  static override get [Symbol.species](): PromiseConstructor {
+    return Promise;
+  }
+
+  private parse(): Promise<T> {
+    this.parsed ??= this.sent.then(this.parseResponse);
+    return this.parsed;
+  }
+
+  /** The parsed data and the `Response` it came from. */
+  async withResponse(): Promise<{ data: T; response: Response }> {
+    const { response } = await this.sent;
+    return { data: await this.parse(), response };
+  }
+
+  /** The raw `Response`. Its body is unread unless you also await the data. */
+  async asResponse(): Promise<Response> {
+    return (await this.sent).response;
+  }
+
+  override then<R1 = T, R2 = never>(
+    onfulfilled?: ((value: T) => R1 | PromiseLike<R1>) | null,
+    onrejected?: ((reason: unknown) => R2 | PromiseLike<R2>) | null,
+  ): Promise<R1 | R2> {
+    return this.parse().then(onfulfilled, onrejected);
+  }
+}
+
+/** The first page of a list. Iterate it directly to walk every item without awaiting first. */
+export class PagePromise<Item, Resp> extends APIPromise<Page<Item, Resp>> implements AsyncIterable<Item> {
+  async *[Symbol.asyncIterator](): AsyncGenerator<Item> {
+    yield* await this;
+  }
+}
+
+export abstract class BaseClient {
+  readonly baseURL: string;
+  readonly timeout: number;
+  readonly maxRetries: number;
+  protected readonly logger: Logger;
+  private readonly fetchImpl: Fetch;
+  private readonly defaultHeaders: Record<string, string | null | undefined>;
+  private readonly settings: ClientSettings;
+
+  constructor(settings: ClientSettings) {
+    this.settings = settings;
+    this.baseURL = settings.baseURL.replace(/\/+$/, '');
+    this.timeout = settings.timeout ?? 60_000;
+    this.maxRetries = settings.maxRetries ?? 2;
+    this.fetchImpl = settings.fetch ?? ((input, init) => fetch(input, init));
+    this.defaultHeaders = settings.defaultHeaders ?? {};
+    this.logger = levelLogger(
+      settings.logger ?? console,
+      settings.logLevel ?? parseLogLevel(readEnv('{{ c.log_env }}')) ?? 'warn',
+    );
+  }
+
+  /** Adds credentials to a request. Called before every attempt. */
+  protected abstract authenticate(request: AuthRequest): Promise<void>;
+
+  /** `fetch` with this client's logging, for requests that don't go through `request`. */
+  protected fetch(url: string, init: RequestInit): Promise<Response> {
+    this.logger.debug('[{{ c.name }}] request', init.method, url);
+    return this.fetchImpl(url, init);
+  }
+
+  request<T>(spec: RequestSpec, options: RequestOptions = {}): APIPromise<T> {
+    return new APIPromise(this.send(spec, options), (sent) => this.parse<T>(spec, sent));
+  }
+
+  requestPage<Item, Resp>(
+    spec: RequestSpec & { pagination: PageSpec },
+    options: RequestOptions = {},
+  ): PagePromise<Item, Resp> {
+    const query = (spec.query ?? {}) as Record<string, unknown>;
+    const fetchPage = (next: Record<string, unknown>) =>
+      this.requestPage<Item, Resp>({ ...spec, query: next }, options);
+    return new PagePromise(
+      this.send({ ...spec, query }, options),
+      async ({ response }) =>
+        new Page<Item, Resp>(fetchPage, (await readJSON(response)) as Resp, query, spec.pagination),
+    );
+  }
+
+  private async parse<T>(spec: RequestSpec, { response, controller }: Sent): Promise<T> {
+    switch (spec.response ?? 'json') {
+      case 'stream':
+        return new Stream(response, controller) as T;
+      case 'binary':
+        return response as T;
+      case 'text':
+        return (await response.text()) as T;
+      case 'empty':
+        await response.arrayBuffer();
+        return undefined as T;
+      case 'json':
+        return (await readJSON(response)) as T;
+    }
+  }
+
+  private async send(spec: RequestSpec, options: RequestOptions): Promise<Sent> {
+    const maxRetries = options.maxRetries ?? this.maxRetries;
+    const timeout = options.timeout ?? this.timeout;
+    const { body, contentType } = await encodeBody(spec, options);
+{% if c.idempotency %}
+    const idempotencyKey =
+      spec.method === 'GET' ? undefined : (options.idempotencyKey ?? `{{ c.name }}-${uuid()}`);
+{% endif %}
+
+    for (let attempt = 0; ; attempt++) {
+      const headers = new Headers({ accept: acceptHeader(spec) });
+      if (typeof document === 'undefined') {
+        headers.set('user-agent', '{{ c.name }}-typescript/' + this.settings.version);
+      }
+      if (contentType) headers.set('content-type', contentType);
+{% if c.idempotency %}
+      if (idempotencyKey) headers.set('{{ c.idempotency }}', idempotencyKey);
+{% endif %}
+      const auth: AuthRequest = { headers, query: {} };
+      await this.authenticate(auth);
+      applyHeaders(headers, this.defaultHeaders);
+      applyHeaders(headers, spec.headers as Record<string, unknown> | undefined);
+      applyHeaders(headers, options.headers);
+      const url = this.buildURL(spec, options, auth.query);
+
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      if (options.signal?.aborted) abort();
+      options.signal?.addEventListener('abort', abort, { once: true });
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        abort();
+      }, timeout);
+
+      const started = Date.now();
+      this.logger.debug(`[{{ c.name }}] ${spec.method} ${redactURL(url, this.settings.sensitiveQuery)}`, {
+        attempt: attempt + 1,
+        headers: redactHeaders(headers, this.settings.sensitiveHeaders),
+      });
+      let response: Response;
+      try {
+        response = await this.fetchImpl(url.toString(), {
+          method: spec.method,
+          headers,
+          body,
+          signal: controller.signal,
+        });
+      } catch (cause) {
+        clearTimeout(timer);
+        if (options.signal?.aborted) throw new APIUserAbortError();
+        const error = timedOut ? new APIConnectionTimeoutError() : new APIConnectionError({ cause });
+        this.logger.debug(`[{{ c.name }}] ${spec.method} ${url.pathname} failed: ${error.message}`);
+        if (attempt >= maxRetries) throw error;
+        await this.backoff(attempt, maxRetries, undefined, options.signal);
+        continue;
+      }
+      clearTimeout(timer);
+      this.logger.debug(
+        `[{{ c.name }}] ${response.status} ${spec.method} ${url.pathname} (${Date.now() - started}ms)`,
+        { requestID: response.headers.get('x-request-id') },
+      );
+
+      if (response.ok) return { response, controller };
+      if (attempt < maxRetries && shouldRetry(response.status)) {
+        await response.body?.cancel().catch(() => {});
+        await this.backoff(attempt, maxRetries, response.headers.get('retry-after'), options.signal);
+        continue;
+      }
+      throw await makeAPIError(response);
+    }
+  }
+
+  private async backoff(
+    attempt: number,
+    maxRetries: number,
+    retryAfter: string | null | undefined,
+    signal: AbortSignal | null | undefined,
+  ): Promise<void> {
+    const delay = retryAfterMs(retryAfter) ?? backoffMs(attempt);
+    this.logger.info(`[{{ c.name }}] retrying in ${delay}ms (${maxRetries - attempt} retries left)`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    if (signal?.aborted) throw new APIUserAbortError();
+  }
+
+  private buildURL(spec: RequestSpec, options: RequestOptions, authQuery: Record<string, string>): URL {
+    const url = new URL(this.baseURL + spec.path);
+    const query = { ...spec.query, ...options.query, ...authQuery };
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined || value === null) continue;
+      for (const item of Array.isArray(value) ? value : [value]) url.searchParams.append(key, String(item));
+    }
+    return url;
+  }
+}
+
+async function readJSON(response: Response): Promise<unknown> {
+  const text = await response.text();
+  return text ? JSON.parse(text) : undefined;
+}
+
+function acceptHeader(spec: RequestSpec): string {
+  switch (spec.response ?? 'json') {
+    case 'json':
+      return 'application/json';
+    case 'stream':
+      return 'text/event-stream';
+    default:
+      return '*/*';
+  }
+}
+
+function applyHeaders(headers: Headers, extra: Record<string, unknown> | undefined): void {
+  for (const [name, value] of Object.entries(extra ?? {})) {
+    if (value === null) headers.delete(name);
+    else if (value !== undefined) headers.set(name, String(value));
+  }
+}
+
+async function encodeBody(
+  spec: RequestSpec,
+  options: RequestOptions,
+): Promise<{ body: BodyInit | undefined; contentType?: string }> {
+  if (spec.encoding === 'binary') {
+    if (spec.body === undefined) return { body: undefined };
+    const blob = await toBlob(spec.body as Uploadable);
+    return { body: blob, contentType: blob.type || 'application/octet-stream' };
+  }
+  if (spec.body === undefined && !options.body) return { body: undefined };
+  const fields = { ...(spec.body as object | undefined), ...options.body };
+  switch (spec.encoding ?? 'json') {
+    case 'multipart':
+      return { body: await toMultipart(fields) };
+    case 'form':
+      return { body: toURLEncoded(fields) };
+    default:
+      return { body: JSON.stringify(fields), contentType: 'application/json' };
+  }
+}
+
+function shouldRetry(status: number): boolean {
+  return status === 408 || status === 409 || status === 429 || status >= 500;
+}
+
+/** Exponential backoff from 0.5 s, capped at 8 s, with up to 25% jitter. */
+function backoffMs(attempt: number): number {
+  return Math.round(Math.min(500 * 2 ** attempt, 8000) * (1 - Math.random() * 0.25));
+}
+
+/** `Retry-After` as seconds or an HTTP date, capped at 60 s. */
+function retryAfterMs(header: string | null | undefined): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header);
+  const ms = Number.isNaN(seconds) ? Date.parse(header) - Date.now() : seconds * 1000;
+  return Number.isNaN(ms) ? undefined : Math.min(Math.max(ms, 0), 60_000);
+}
+
+/** Builds the error for a non-2xx response, reading its body for a message. */
+export async function makeAPIError(response: Response): Promise<APIError> {
+  const text = await response.text().catch(() => '');
+  let body: unknown = text || undefined;
+  try {
+    body = text ? JSON.parse(text) : undefined;
+  } catch {}
+  const fields = body as { error?: { message?: unknown } | string; message?: unknown } | undefined;
+  const nested = typeof fields?.error === 'object' ? fields.error.message : fields?.error;
+  const message = [nested, fields?.message, text].find((m) => typeof m === 'string' && m);
+  return APIError.generate(response.status, body, message as string | undefined, response.headers);
+}
+
+export function readEnv(name: string): string | undefined {
+  const globals = globalThis as {
+    process?: { env?: Record<string, string | undefined> };
+    Deno?: { env?: { get(name: string): string | undefined } };
+  };
+  let value: string | undefined;
+  try {
+    value = globals.process?.env?.[name] ?? globals.Deno?.env?.get(name);
+  } catch {}
+  return value?.trim() || undefined;
+}
+
+export function uuid(): string {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.floor(Math.random() * 16);
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
+/** Web Crypto, from the global scope or, on Node 18, from `node:crypto`. */
+export async function getCrypto(): Promise<Crypto> {
+  if (globalThis.crypto?.subtle) return globalThis.crypto;
+  const specifier = 'node:crypto';
+  return ((await import(/* webpackIgnore: true */ specifier)) as { webcrypto: Crypto }).webcrypto;
+}
+
+/** The entries of `obj` named in `keys`. */
+export function pick(obj: object, keys: string[]): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(obj).filter(([key]) => keys.includes(key)));
+}
+
+/** The entries of `obj` not named in `keys`. */
+export function omit(obj: object, keys: string[]): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(obj).filter(([key]) => !keys.includes(key)));
+}
+
+/** Base64 of a string's UTF-8 bytes. */
+export function base64(text: string): string {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+}
+
+const warned = new Set<string>();
+
+/** Warns the first time a deprecated method is called. */
+export function warnDeprecated(method: string, advice?: string): void {
+  if (warned.has(method)) return;
+  warned.add(method);
+  console.warn(`[{{ c.name }}] ${method}() is deprecated.${advice ? ` ${advice}` : ''}`);
+}

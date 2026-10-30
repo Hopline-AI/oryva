@@ -1,0 +1,24 @@
+export { ENVIRONMENTS, type ClientOptions, type Environment, {{ c.client }} } from './client.js';
+export { {{ c.client }} as default } from './client.js';
+export * from './errors.js';
+export {
+  APIPromise,
+  type Fetch,
+  type Logger,
+  type LogLevel,
+  PagePromise,
+  type RequestOptions,
+} from './core.js';
+export { Page } from './pagination.js';
+export { Stream } from './streaming.js';
+export { toFile, type Uploadable } from './uploads.js';
+export type * from './types.js';
+{% if c.webhook_secret_env %}
+export { type UnwrapWebhookEvent, type WebhookHeaders, Webhooks } from './webhooks.js';
+{% endif %}
+{% for r in c.resources %}
+export { {{ r.class }} } from './resources/{{ r.file }}.js';
+{% if r.params %}
+export type { {{ r.params | join(", ") }} } from './resources/{{ r.file }}.js';
+{% endif %}
+{% endfor %}

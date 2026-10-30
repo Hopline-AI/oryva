@@ -1,0 +1,120 @@
+/** Base class for every error this SDK throws. */
+export class {{ c.error }} extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = new.target.name;
+  }
+}
+
+/** The API answered with a non-2xx status. */
+export class APIError extends {{ c.error }} {
+  readonly status: number | undefined;
+  readonly headers: Headers | undefined;
+  /** The parsed response body: JSON when the server sent JSON, otherwise text. */
+  readonly error: unknown;
+  /** The `x-request-id` response header; quote it when contacting support. */
+  readonly requestID: string | null | undefined;
+
+  constructor(
+    status: number | undefined,
+    error: unknown,
+    message: string | undefined,
+    headers: Headers | undefined,
+  ) {
+    const hint = status === undefined ? undefined : hintFor(status);
+    super([status, message].filter(Boolean).join(' ') + (hint ? ` (${hint})` : ''));
+    this.status = status;
+    this.headers = headers;
+    this.error = error;
+    this.requestID = headers?.get('x-request-id');
+  }
+
+  static generate(
+    status: number,
+    error: unknown,
+    message: string | undefined,
+    headers: Headers,
+  ): APIError {
+    if (status === 400) return new BadRequestError(status, error, message, headers);
+    if (status === 401) return new AuthenticationError(status, error, message, headers);
+    if (status === 403) return new PermissionDeniedError(status, error, message, headers);
+    if (status === 404) return new NotFoundError(status, error, message, headers);
+    if (status === 409) return new ConflictError(status, error, message, headers);
+    if (status === 422) return new UnprocessableEntityError(status, error, message, headers);
+    if (status === 429) return new RateLimitError(status, error, message, headers);
+    if (status >= 500) return new InternalServerError(status, error, message, headers);
+    return new APIError(status, error, message, headers);
+  }
+}
+
+function hintFor(status: number): string | undefined {
+  switch (status) {
+    case 400:
+    case 422:
+      return 'fix the request fields named in the error and try again';
+    case 401:
+      return '{{ c.auth_hint }}';
+    case 403:
+      return 'the credentials are valid but not allowed to do this';
+    case 404:
+      return 'check the ID or path; the object may not exist';
+{% if c.idempotency %}
+    case 409:
+      return 'the request conflicts with current state, or an idempotency key was reused with a different body';
+{% endif %}
+    case 429:
+      return 'rate limited; the SDK retries automatically, so lower your request rate or raise maxRetries';
+    default:
+      return status >= 500
+        ? 'the server failed; retry later and quote the request ID if it persists'
+        : undefined;
+  }
+}
+
+export class BadRequestError extends APIError {
+  declare readonly status: 400;
+}
+export class AuthenticationError extends APIError {
+  declare readonly status: 401;
+}
+export class PermissionDeniedError extends APIError {
+  declare readonly status: 403;
+}
+export class NotFoundError extends APIError {
+  declare readonly status: 404;
+}
+export class ConflictError extends APIError {
+  declare readonly status: 409;
+}
+export class UnprocessableEntityError extends APIError {
+  declare readonly status: 422;
+}
+export class RateLimitError extends APIError {
+  declare readonly status: 429;
+}
+export class InternalServerError extends APIError {}
+
+/** The request never produced a response: DNS failure, refused connection, reset. */
+export class APIConnectionError extends APIError {
+  constructor({ message, cause }: { message?: string; cause?: unknown } = {}) {
+    super(undefined, undefined, message ?? 'Connection error. Check your network and the baseURL', undefined);
+    if (cause !== undefined) this.cause = cause;
+  }
+}
+
+/** The request exceeded `timeout`. Raise it with the `timeout` option. */
+export class APIConnectionTimeoutError extends APIConnectionError {
+  constructor() {
+    super({ message: 'Request timed out. Raise the `timeout` option or try again' });
+  }
+}
+
+/** The caller aborted the request through its `signal`. */
+export class APIUserAbortError extends APIError {
+  constructor() {
+    super(undefined, undefined, 'Request was aborted', undefined);
+  }
+}
+
+/** A webhook failed signature or timestamp verification. */
+export class WebhookVerificationError extends {{ c.error }} {}

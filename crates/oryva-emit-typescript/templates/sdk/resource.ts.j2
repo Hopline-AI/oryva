@@ -1,0 +1,22 @@
+import { type APIPromise, type BaseClient, type RequestOptions{% if r.paginated %}, type PagePromise{% endif %}{% for h in r.helpers %}, {{ h }}{% endfor %}{% if r.deprecated %}, warnDeprecated{% endif %} } from '../core.js';
+{% if r.streams %}
+import type { Stream } from '../streaming.js';
+{% endif %}
+{% if r.uploadable %}
+import type { Uploadable } from '../uploads.js';
+{% endif %}
+{% if r.types %}
+import type { {{ r.types | join(", ") }} } from '../types.js';
+{% endif %}
+
+{{ r.doc }}export class {{ r.class }} {
+  constructor(private readonly client: BaseClient) {}
+
+{% for m in r.methods %}
+{{ m }}
+{% endfor %}
+}
+
+{% for d in r.declarations %}
+{{ d }}
+{% endfor %}

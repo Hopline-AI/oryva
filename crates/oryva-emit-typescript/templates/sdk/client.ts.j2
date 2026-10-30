@@ -1,0 +1,113 @@
+import { type AuthRequest, BaseClient, type CommonOptions, readEnv{% if c.basic %}, base64{% endif %} } from './core.js';
+import { {{ c.error }} } from './errors.js';
+{% if c.oauth %}
+import { ClientCredentials } from './oauth.js';
+{% endif %}
+{% for r in c.resources %}
+import { {{ r.class }} } from './resources/{{ r.file }}.js';
+{% endfor %}
+import { VERSION } from './version.js';
+{% if c.webhook_secret_env %}
+import { Webhooks } from './webhooks.js';
+{% endif %}
+
+/** The named servers. Pick one with the `environment` option. */
+export const ENVIRONMENTS = {
+{% for e in c.environments %}
+  {{ e.key }}: {{ e.url | js }},
+{% endfor %}
+} as const;
+
+export type Environment = keyof typeof ENVIRONMENTS;
+
+export interface ClientOptions extends CommonOptions {
+{% for o in c.options %}
+  /** Defaults to `process.env[{{ o.env | js }}]`. */
+  {{ o.name }}?: string | undefined;
+{% endfor %}
+{% if c.oauth %}
+  /** Where to fetch OAuth2 tokens. Defaults to `process.env[{{ c.oauth.token_url_env | js }}]`, then {{ c.oauth.token_url }}. */
+  tokenURL?: string | undefined;
+{% endif %}
+{% if c.webhook_secret_env %}
+  /** Signing secret for `client.webhooks.unwrap`. Defaults to `process.env[{{ c.webhook_secret_env | js }}]`. */
+  webhookSecret?: string | undefined;
+{% endif %}
+  /** Which server to call. Default `{{ c.default_environment }}`. */
+  environment?: Environment | undefined;
+  /** Overrides `environment`. Defaults to `process.env[{{ c.base_url_env | js }}]`. */
+  baseURL?: string | undefined;
+}
+
+function resolveBaseURL(options: ClientOptions): string {
+  if (options.environment !== undefined && !(options.environment in ENVIRONMENTS)) {
+    const known = Object.keys(ENVIRONMENTS).join(', ');
+    throw new {{ c.error }}(`Unknown environment '${options.environment}'; use one of ${known}`);
+  }
+  return (
+    options.baseURL ??
+    (options.environment && ENVIRONMENTS[options.environment]) ??
+    readEnv({{ c.base_url_env | js }}) ??
+    ENVIRONMENTS.{{ c.default_environment }}
+  );
+}
+
+{{ c.class_doc }}export class {{ c.client }} extends BaseClient {
+{% for o in c.options %}
+  readonly {{ o.name }}: string | undefined;
+{% endfor %}
+{% if c.oauth %}
+  private readonly oauth: ClientCredentials | undefined;
+{% endif %}
+{% for r in c.resources %}
+  readonly {{ r.name }}: {{ r.class }};
+{% endfor %}
+{% if c.webhook_secret_env %}
+  readonly webhooks: Webhooks;
+{% endif %}
+
+  constructor(options: ClientOptions = {}) {
+    super({
+      ...options,
+      baseURL: resolveBaseURL(options),
+      version: VERSION,
+      sensitiveHeaders: [{% for h in c.sensitive_headers %}{{ h | js }}, {% endfor %}],
+      sensitiveQuery: [{% for q in c.sensitive_query %}{{ q | js }}, {% endfor %}],
+    });
+{% for o in c.options %}
+    this.{{ o.name }} = options.{{ o.name }} ?? readEnv({{ o.env | js }});
+{% endfor %}
+{% if c.oauth %}
+    if (this.{{ c.oauth.id_option }} && this.{{ c.oauth.secret_option }}) {
+      this.oauth = new ClientCredentials({
+        tokenURL:
+          options.tokenURL ?? readEnv({{ c.oauth.token_url_env | js }}) ?? {{ c.oauth.token_url | js }},
+        clientId: this.{{ c.oauth.id_option }},
+        clientSecret: this.{{ c.oauth.secret_option }},
+        scopes: [{{ c.oauth.scopes }}],
+        fetch: (url, init) => this.fetch(url, init),
+      });
+    }
+{% endif %}
+{% for r in c.resources %}
+    this.{{ r.name }} = new {{ r.class }}(this);
+{% endfor %}
+{% if c.webhook_secret_env %}
+    this.webhooks = new Webhooks(options.webhookSecret ?? readEnv({{ c.webhook_secret_env | js }}));
+{% endif %}
+  }
+
+  protected override async authenticate(request: AuthRequest): Promise<void> {
+{% for s in c.schemes %}
+    if ({{ s.condition }}) {
+      {{ s.apply }}
+      return;
+    }
+{% endfor %}
+{% if c.schemes %}
+    throw new {{ c.error }}(
+      'Missing credentials: pass them as client options or {{ c.auth_hint }}',
+    );
+{% endif %}
+  }
+}
