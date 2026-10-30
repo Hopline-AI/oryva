@@ -114,6 +114,8 @@ goes to subagents, one crate each, each in its own git worktree.
 Whoever builds doesn't verify. Before merging a branch, the main agent (or a fresh read-only
 agent) reruns `scripts/verify.sh` on it and does a mutation check: inject one small bug into
 code the new tests cover, confirm a test fails, restore. A branch whose tests don't catch the
-bug doesn't merge.
+bug doesn't merge. Restore from a copy of the file made before the mutation, never with
+`git checkout`, which also throws away uncommitted work. Judge "caught" by the test command's
+own exit code, and make sure the mutated code still compiles.
 
 When an agent gets something wrong twice, add a line to this file.
