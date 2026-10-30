@@ -5,3 +5,4 @@
 __pycache__/
 # Tracked again once the parallel crates are merged; avoids lockfile conflicts between branches.
 Cargo.lock
+.claude/worktrees/
