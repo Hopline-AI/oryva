@@ -1,0 +1,717 @@
+# A fictional billing API: the main engine fixture. It exists to exercise every feature the
+# generator supports, so add to it when a feature lands. Engine tests use neutral fixtures like
+# this one, never a customer's API.
+#
+# Covers: two environments, alternative auth schemes (bearer, OAuth2 client credentials), an
+# idempotency header, cursor / offset / page pagination, a server-sent event stream with a
+# discriminated union, multipart and raw binary uploads, a binary download, defaults, string and
+# integer enums, nullable fields, maps, a deprecated operation, error responses, agent notes,
+# and signed webhooks.
+openapi: 3.1.0
+info:
+  title: Ledger API
+  version: "2026-10-01"
+  description: Customers, invoices, payments and refunds for small businesses.
+  x-oryva-name: ledger
+  x-oryva-idempotency-header: Idempotency-Key
+  x-oryva-webhook-signing: standard-webhooks
+servers:
+  - url: https://api.ledger.example
+    description: Live data.
+    x-oryva-name: production
+  - url: https://sandbox.ledger.example
+    description: Test data; no money moves.
+    x-oryva-name: sandbox
+security:
+  - bearerAuth: []
+  - oauth: [ledger.read, ledger.write]
+tags:
+  - name: customers
+    description: People and companies you bill.
+  - name: invoices
+    description: Requests for payment.
+  - name: payments
+    description: Money received.
+  - name: refunds
+    description: Money returned.
+  - name: files
+    description: Attachments such as receipts.
+  - name: events
+    description: A live feed of account activity.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    oauth:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.ledger.example/oauth/token
+          scopes:
+            ledger.read: Read data
+            ledger.write: Create and change data
+  schemas:
+    Currency:
+      type: string
+      description: ISO 4217 currency code, lowercase.
+      enum: [usd, eur, gbp, inr]
+    Customer:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: [string, "null"]
+          format: email
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Your own key-value pairs.
+        created_at:
+          type: string
+          format: date-time
+    LineItem:
+      type: object
+      required: [description, amount]
+      properties:
+        description:
+          type: string
+        amount:
+          type: integer
+          description: Amount in the currency's smallest unit, e.g. cents.
+        quantity:
+          type: integer
+          default: 1
+    Invoice:
+      type: object
+      required: [id, customer_id, status, currency, line_items, total]
+      properties:
+        id:
+          type: string
+        customer_id:
+          type: string
+        status:
+          type: string
+          enum: [draft, open, paid, void]
+        currency:
+          $ref: "#/components/schemas/Currency"
+        line_items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineItem"
+        total:
+          type: integer
+        reminder_level:
+          type: integer
+          enum: [0, 1, 2]
+          description: How many payment reminders have been sent.
+        due_date:
+          type: [string, "null"]
+          format: date
+    Payment:
+      type: object
+      required: [id, invoice_id, amount, status]
+      properties:
+        id:
+          type: string
+        invoice_id:
+          type: string
+        amount:
+          type: integer
+        status:
+          type: string
+          enum: [pending, succeeded, failed]
+        failure_reason:
+          type: [string, "null"]
+    Refund:
+      type: object
+      required: [id, payment_id, amount]
+      properties:
+        id:
+          type: string
+        payment_id:
+          type: string
+        amount:
+          type: integer
+        reason:
+          type: string
+          enum: [duplicate, fraudulent, requested_by_customer]
+    File:
+      type: object
+      required: [id, filename, size_bytes]
+      properties:
+        id:
+          type: string
+        filename:
+          type: string
+        size_bytes:
+          type: integer
+    InvoicePaidEvent:
+      type: object
+      required: [type, invoice]
+      properties:
+        type:
+          type: string
+          const: invoice.paid
+        invoice:
+          $ref: "#/components/schemas/Invoice"
+    PaymentFailedEvent:
+      type: object
+      required: [type, payment]
+      properties:
+        type:
+          type: string
+          const: payment.failed
+        payment:
+          $ref: "#/components/schemas/Payment"
+    Event:
+      oneOf:
+        - $ref: "#/components/schemas/InvoicePaidEvent"
+        - $ref: "#/components/schemas/PaymentFailedEvent"
+      discriminator:
+        propertyName: type
+        mapping:
+          invoice.paid: "#/components/schemas/InvoicePaidEvent"
+          payment.failed: "#/components/schemas/PaymentFailedEvent"
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            param:
+              type: [string, "null"]
+              description: The request field the error is about, if any.
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 20
+        maximum: 100
+      description: Maximum items per page (at most 100).
+  responses:
+    BadRequest:
+      description: The request was invalid; `error.param` names the field.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: No object with that ID.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: The idempotency key was reused with a different request body.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Too many requests; retry after the number of seconds in Retry-After.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+paths:
+  /customers:
+    get:
+      tags: [customers]
+      operationId: customers_list
+      summary: List customers, newest first.
+      x-oryva-pagination:
+        style: cursor
+        param: starting_after
+        next_cursor: [next_cursor]
+        items: [data]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - name: starting_after
+          in: query
+          schema:
+            type: string
+          description: Cursor from the previous page's `next_cursor`.
+        - name: email
+          in: query
+          schema:
+            type: string
+          description: Only customers with exactly this email.
+      responses:
+        "200":
+          description: A page of customers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Customer"
+                  next_cursor:
+                    type: [string, "null"]
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [customers]
+      operationId: customers_create
+      summary: Create a customer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                email:
+                  type: [string, "null"]
+                  format: email
+                metadata:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        "201":
+          description: The new customer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /customers/search:
+    get:
+      tags: [customers]
+      operationId: customers_search
+      summary: Search customers by name.
+      deprecated: true
+      description: Use `customers.list` with `email` instead.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Matching customers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Customer"
+  /customers/{customer_id}:
+    parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [customers]
+      operationId: customers_get
+      summary: Fetch one customer.
+      responses:
+        "200":
+          description: The customer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [customers]
+      operationId: customers_update
+      summary: Change a customer's name, email or metadata.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: [string, "null"]
+                  format: email
+                  description: Send null to remove the email.
+                metadata:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        "200":
+          description: The updated customer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [customers]
+      operationId: customers_delete
+      summary: Delete a customer and all their unpaid invoices.
+      x-oryva-agent:
+        hint: Permanent, and also deletes the customer's draft and open invoices. Fetch the customer first and confirm with the user.
+      responses:
+        "204":
+          description: Deleted.
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /invoices:
+    get:
+      tags: [invoices]
+      operationId: invoices_list
+      summary: List invoices.
+      x-oryva-pagination:
+        style: offset
+        offset_param: offset
+        limit_param: limit
+        items: [data]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, open, paid, void]
+      responses:
+        "200":
+          description: A page of invoices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, total]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Invoice"
+                  total:
+                    type: integer
+    post:
+      tags: [invoices]
+      operationId: invoices_create
+      summary: Create a draft invoice.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customer_id, line_items]
+              properties:
+                customer_id:
+                  type: string
+                currency:
+                  allOf:
+                    - $ref: "#/components/schemas/Currency"
+                  default: usd
+                line_items:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/LineItem"
+                due_date:
+                  type: string
+                  format: date
+      responses:
+        "201":
+          description: The draft invoice.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /invoices/{invoice_id}:
+    parameters:
+      - name: invoice_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [invoices]
+      operationId: invoices_get
+      summary: Fetch one invoice.
+      responses:
+        "200":
+          description: The invoice.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /invoices/{invoice_id}/finalize:
+    post:
+      tags: [invoices]
+      operationId: invoices_finalize
+      summary: Turn a draft invoice into an open one and email it to the customer.
+      x-oryva-agent:
+        hint: Emails the customer immediately; this can't be undone.
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The open invoice.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+  /invoices/{invoice_id}/void:
+    post:
+      tags: [invoices]
+      operationId: invoices_void
+      summary: Void an open invoice so it can no longer be paid.
+      x-oryva-agent:
+        destructive: true
+        idempotent: true
+        hint: Permanent. Only open invoices can be voided.
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The voided invoice.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        "409":
+          description: The invoice isn't open.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /invoices/{invoice_id}/pdf:
+    get:
+      tags: [invoices]
+      operationId: invoices_download_pdf
+      summary: Download the invoice as a PDF.
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The PDF.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+  /payments:
+    get:
+      tags: [payments]
+      operationId: payments_list
+      summary: List payments.
+      x-oryva-pagination:
+        style: page
+        page_param: page
+        items: [items]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: invoice_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A page of payments.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Payment"
+                  total_pages:
+                    type: integer
+  /payments/{payment_id}:
+    get:
+      tags: [payments]
+      operationId: payments_get
+      summary: Fetch one payment.
+      parameters:
+        - name: payment_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The payment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+  /refunds:
+    post:
+      tags: [refunds]
+      operationId: refunds_create
+      summary: Refund all or part of a payment.
+      x-oryva-agent:
+        destructive: true
+        hint: Moves money back to the customer and can't be reversed. Check the payment's amount first; a refund can't exceed what's left to refund.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payment_id]
+              properties:
+                payment_id:
+                  type: string
+                amount:
+                  type: integer
+                  description: Smallest currency unit. Omit to refund the full remaining amount.
+                reason:
+                  type: string
+                  enum: [duplicate, fraudulent, requested_by_customer]
+      responses:
+        "201":
+          description: The refund.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Refund"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /files:
+    post:
+      tags: [files]
+      operationId: files_upload
+      summary: Upload a file, such as a receipt, as a multipart form.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                purpose:
+                  type: string
+                  enum: [receipt, contract]
+      responses:
+        "201":
+          description: The stored file.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+  /files/raw:
+    post:
+      tags: [files]
+      operationId: files_upload_raw
+      summary: Upload a file as the raw request body.
+      parameters:
+        - name: filename
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: The stored file.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+  /events/stream:
+    get:
+      tags: [events]
+      operationId: events_stream
+      summary: Stream account events as they happen.
+      x-oryva-agent:
+        hint: Long-lived. Read a few events and stop; don't wait for the stream to end.
+      responses:
+        "200":
+          description: Server-sent events; each event's data is an Event.
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/Event"
+webhooks:
+  invoice.paid:
+    post:
+      summary: An invoice was paid in full.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvoicePaidEvent"
+      responses:
+        "200":
+          description: Acknowledge receipt.
+  payment.failed:
+    post:
+      summary: A payment attempt failed.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentFailedEvent"
+      responses:
+        "200":
+          description: Acknowledge receipt.

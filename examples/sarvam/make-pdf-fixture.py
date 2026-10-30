@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Writes fixtures/evals/files/15-pages.pdf: 15 pages, one line of text each. Stdlib only."""
+"""Writes examples/sarvam/files/15-pages.pdf: 15 pages, one line of text each. Stdlib only."""
 import pathlib
 
 PAGES = 15
@@ -23,7 +23,7 @@ out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
 out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
 out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
 
-dest = pathlib.Path(__file__).resolve().parent.parent / "fixtures/evals/files/15-pages.pdf"
+dest = pathlib.Path(__file__).resolve().parent / "files/15-pages.pdf"
 dest.parent.mkdir(parents=True, exist_ok=True)
 dest.write_bytes(out)
 print(f"wrote {dest} ({len(out)} bytes)")

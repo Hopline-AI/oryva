@@ -30,7 +30,7 @@ oryva eval tasks.yaml --json report.json   # also run the tasks; needs ANTHROPIC
 ```
 
 A task file names the MCP server to start and the tasks to run; see
-`fixtures/evals/sarvam-mcp.yaml`. Specs can carry agent-facing notes in an `x-oryva-agent`
+`examples/sarvam/sarvam-mcp.eval.yaml`. Specs can carry agent-facing notes in an `x-oryva-agent`
 extension on each operation (`read_only`, `destructive`, `idempotent`, `hint`, `examples`).
 
 ## Development

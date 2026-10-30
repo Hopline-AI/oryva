@@ -43,7 +43,7 @@ tasks:
       max_tool_calls: 4
 
   - id: parse-15-page-pdf
-    prompt: Parse the PDF at fixtures/evals/files/15-pages.pdf and give me its text as markdown. Do not split it into parts.
+    prompt: Parse the PDF at examples/sarvam/files/15-pages.pdf and give me its text as markdown. Do not split it into parts.
     expect:
       tools_called: [sarvam_tools_vision_parse]
       tools_not_called: [sarvam_tools_vision_split]
