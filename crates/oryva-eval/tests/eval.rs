@@ -253,3 +253,25 @@ async fn run_fails_task_on_bad_stop_reasons() {
     assert!(report.tasks[1].failures[0].contains("max_tokens"));
     assert!(report.tasks[2].failures[0].contains("max_turns"));
 }
+
+#[tokio::test]
+async fn failed_call_in_a_passing_task_counts_as_a_recovery() {
+    // The failing tool never succeeds later; the task passes anyway.
+    let file = TaskFile::from_yaml(&format!(
+        "server:\n  command: {}\ntasks:\n  - id: shrug-off\n    prompt: x\n    expect:\n      tools_called: [echo]\n",
+        server().command
+    ))
+    .unwrap();
+    let model = Scripted {
+        responses: Mutex::new(VecDeque::from([
+            tool_use(&[("a", "retired_tool", json!({}))], None),
+            tool_use(&[("b", "echo", json!({"message": "hi"}))], None),
+            end("done"),
+        ])),
+        seen: Mutex::new(vec![]),
+    };
+    let report = run(&file, &model).await.unwrap();
+    let t = &report.tasks[0];
+    assert!(t.passed, "{:?}", t.failures);
+    assert_eq!((t.tool_errors, t.recoveries), (1, 1));
+}

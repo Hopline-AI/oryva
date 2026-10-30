@@ -58,7 +58,26 @@ impl LintReport {
 
 const MIN_DESCRIPTION: usize = 40;
 const DESTRUCTIVE_WORDS: [&str; 6] = ["delete", "remove", "cancel", "refund", "revoke", "drop"];
-const RETIRED_PHRASES: [&str; 3] = ["deprecated", "retired", "no longer"];
+/// Phrases that say the tool itself is gone. A bare "deprecated" is not enough: a validator
+/// can legitimately mention "deprecated values".
+const RETIRED_PHRASES: [&str; 14] = [
+    "is deprecated",
+    "is retired",
+    "has been deprecated",
+    "has been retired",
+    "has been removed",
+    "was deprecated",
+    "was retired",
+    "was removed",
+    "permanently removed",
+    "no longer available",
+    "no longer supported",
+    "no longer works",
+    "no longer exists",
+    "no longer maintained",
+];
+/// A description that opens with one of these is a deprecation notice.
+const RETIRED_PREFIXES: [&str; 3] = ["deprecated", "[deprecated", "retired"];
 
 /// Connects to the server, lists its tools and lints them.
 pub async fn lint(cfg: &ServerConfig) -> Result<LintReport, Error> {
@@ -151,7 +170,11 @@ pub fn lint_tools(tools: &[ToolDef]) -> LintReport {
         }
 
         let lower = desc.to_lowercase();
-        if let Some(p) = RETIRED_PHRASES.iter().find(|p| lower.contains(*p)) {
+        let retired = RETIRED_PHRASES
+            .iter()
+            .find(|p| lower.contains(**p))
+            .or_else(|| RETIRED_PREFIXES.iter().find(|p| lower.starts_with(**p)));
+        if let Some(p) = retired {
             add(
                 Severity::Error,
                 "deprecated-exposed",
@@ -242,6 +265,39 @@ impl fmt::Display for LintReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tool(name: &str, description: &str) -> ToolDef {
+        serde_json::from_value(serde_json::json!({
+            "name": name,
+            "description": description,
+            "inputSchema": {"type": "object"},
+            "annotations": {"readOnlyHint": true},
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn deprecated_rule_wants_the_tool_itself_retired() {
+        // Real descriptions from sarvam-mcp 0.2.13.
+        let validator = "Build-time tool — helps write code that uses Sarvam. For runtime actions, use sarvam_tools_* instead.\n\nValidate a draft Sarvam API request body against the canonical schema BEFORE the dev sends it. Catches: invalid model names, speaker/model mismatches, deprecated values, unsupported language codes, missing required fields. Returns a list of issues with fix suggestions.";
+        let analytics = "Runtime tool — calls Sarvam API now. For code-writing help, use sarvam_code_* tools.\n\nPERMANENTLY REMOVED: Sarvam retired the old analytics/parse API family (this `/text-analytics` endpoint included) — confirmed via a direct API call outside this tool (404, first observed 2026-08-13). Calling this tool raises immediately.";
+        let report = lint_tools(&[
+            tool("validate_request", validator),
+            tool("text_analytics", analytics),
+            tool("old", "DEPRECATED: use new_thing instead of this tool."),
+            tool("gone", "Fetches a report. No longer available since March."),
+        ]);
+        let flagged = |t: &str| {
+            report
+                .findings
+                .iter()
+                .any(|f| f.tool == t && f.rule == "deprecated-exposed")
+        };
+        assert!(!flagged("validate_request"));
+        assert!(flagged("text_analytics"));
+        assert!(flagged("old"));
+        assert!(flagged("gone"));
+    }
 
     #[test]
     fn splits_names() {
