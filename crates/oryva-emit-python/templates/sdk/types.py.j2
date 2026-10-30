@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+import os
+{% for line in t.imports %}
+{{ line }}
+{% endfor %}
+
+from pydantic import {{ t.pydantic }}
+
+FileInput = Union[bytes, str, "os.PathLike[str]", BinaryIO]
+"""A file to upload: raw bytes, a path, or a file object opened in binary mode."""
+{% for ty in t.types %}
+{% if ty.expr %}
+
+{{ ty.name }} = {{ ty.expr }}
+{% if ty.doc %}
+"""{{ ty.doc }}"""
+{% endif %}
+{% else %}
+
+
+class {{ ty.name }}(BaseModel):
+{% if ty.doc %}
+    """{{ ty.doc }}"""
+
+{% endif %}
+    model_config = ConfigDict({{ ty.config }})
+{% if ty.fields %}
+
+{% endif %}
+{% for f in ty.fields %}
+    {{ f.ident }}: {{ f.annotation }}{% if f.assign %} = {{ f.assign }}{% endif %}
+
+{% if f.doc %}
+    """{{ f.doc }}"""
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}

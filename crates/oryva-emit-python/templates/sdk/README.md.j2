@@ -1,0 +1,34 @@
+# {{ c.dist }}
+
+{{ c.summary }}
+
+## Install
+
+```sh
+pip install {{ c.dist }}
+```
+
+Requires Python 3.9 or newer.
+
+## Usage
+
+{% if c.env_key %}
+Set your API key in the environment (`export {{ c.env_key }}=...`) or pass `api_key=` to the client.
+
+{% endif %}
+```python
+from {{ c.pkg }} import {{ c.class }}
+
+{{ c.example }}
+```
+
+Every method takes keyword arguments and returns a typed `pydantic` model. The client retries
+rate limits, server errors and dropped connections (`max_retries=2` by default) and raises
+`{{ c.pkg }}.APIError` subclasses with a message that says how to fix the problem.
+
+```python
+with {{ c.class }}(timeout=30, max_retries=4) as client:
+    ...
+```
+
+Set `{{ c.env_base_url }}` or pass `base_url=` to point the client somewhere else.

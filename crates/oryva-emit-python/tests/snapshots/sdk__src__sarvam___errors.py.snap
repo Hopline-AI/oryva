@@ -1,0 +1,158 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+"""Exceptions raised by the SDK.
+
+Every message says what failed and what to try next, so a caller (or an agent) can recover
+without reading the docs.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any, Mapping, Optional
+
+import httpx
+
+
+class SarvamError(Exception):
+    """Base class for every error this SDK raises."""
+
+
+class APIConnectionError(SarvamError):
+    """The request never got a response (DNS, refused connection, dropped socket)."""
+
+
+class APITimeoutError(APIConnectionError):
+    """The server did not answer within the client's `timeout`."""
+
+
+class APIError(SarvamError):
+    """The API answered with an error status."""
+
+    hint: Optional[str] = None
+
+    def __init__(
+        self,
+        status_code: int,
+        message: str,
+        body: Any = None,
+        request_id: Optional[str] = None,
+        *,
+        retry_after: Optional[float] = None,
+    ) -> None:
+        self.status_code = status_code
+        self.message = message
+        self.body = body
+        self.request_id = request_id
+        self.retry_after = retry_after
+        text = message
+        if request_id:
+            text += f" (request_id={request_id})"
+        hint = self.get_hint()
+        if hint:
+            text += f"\nHint: {hint}"
+        super().__init__(text)
+
+    def get_hint(self) -> Optional[str]:
+        return self.hint
+
+
+class BadRequestError(APIError):
+    hint = (
+        "Fix the parameter named in the message and call again. "
+        "Repeating the same request will fail the same way."
+    )
+
+
+class AuthenticationError(APIError):
+    hint = (
+        "The API key was missing or rejected. Set SARVAM_API_KEY to a valid key "
+        "or pass api_key= to Sarvam()."
+    )
+
+
+class PermissionDeniedError(APIError):
+    hint = "The key is valid but not allowed to do this. Check its permissions or plan."
+
+
+class NotFoundError(APIError):
+    hint = "Check the ID or path. List the resource to find valid IDs."
+
+
+class UnprocessableEntityError(APIError):
+    hint = "The request was well formed but a value was rejected. Check the field values in the message."
+
+
+class RateLimitError(APIError):
+    def get_hint(self) -> Optional[str]:
+        if self.retry_after is not None:
+            return f"Rate limited. Wait {self.retry_after:g} seconds, then retry."
+        return "Rate limited. Wait a few seconds, then retry with fewer requests per second."
+
+
+class InternalServerError(APIError):
+    hint = "The server failed. Retry in a moment; if it keeps failing, report the request_id."
+
+
+_STATUS_ERRORS = {
+    400: BadRequestError,
+    401: AuthenticationError,
+    403: PermissionDeniedError,
+    404: NotFoundError,
+    422: UnprocessableEntityError,
+    429: RateLimitError,
+}
+
+
+def parse_retry_after(headers: Mapping[str, str]) -> Optional[float]:
+    """Read `Retry-After` when it is a number of seconds."""
+    try:
+        return max(0.0, float(headers["retry-after"]))
+    except (KeyError, ValueError):
+        return None
+
+
+def make_error(response: httpx.Response, method: str, path: str) -> APIError:
+    """Turn an error response into the matching `APIError` subclass."""
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    detail = _detail(body) or response.text.strip()[:500] or response.reason_phrase
+    status = response.status_code
+    cls = _STATUS_ERRORS.get(status) or (
+        InternalServerError if status >= 500 else APIError
+    )
+    return cls(
+        status,
+        f"{method} {path} returned {status}: {detail}",
+        body,
+        response.headers.get("x-request-id") or _find(body, "request_id"),
+        retry_after=parse_retry_after(response.headers),
+    )
+
+
+def _detail(body: Any) -> Optional[str]:
+    if not isinstance(body, dict):
+        return None
+    error = body.get("error")
+    if isinstance(error, str):
+        return error
+    source = error if isinstance(error, dict) else body
+    for key in ("message", "detail"):
+        value = source.get(key)
+        if value:
+            return value if isinstance(value, str) else json.dumps(value)
+    return None
+
+
+def _find(body: Any, key: str) -> Optional[str]:
+    if not isinstance(body, dict):
+        return None
+    error = body.get("error")
+    for source in (body, error if isinstance(error, dict) else {}):
+        if isinstance(source.get(key), str):
+            return source[key]
+    return None

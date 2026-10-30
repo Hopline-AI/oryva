@@ -1,0 +1,193 @@
+from __future__ import annotations
+
+import os
+import random
+import time
+from datetime import date, datetime
+from pathlib import Path
+from typing import Any, Dict, Mapping, Optional
+
+import httpx
+from pydantic import BaseModel
+
+from ._errors import (
+    APIConnectionError,
+    APITimeoutError,
+    {{ c.error_base }},
+    make_error,
+    parse_retry_after,
+)
+from ._version import __version__
+from .resources import (
+{% for r in c.resources | sort(attribute="class") %}
+    {{ r.class }},
+{% endfor %}
+)
+from .types import FileInput
+
+{% if c.default_base_url %}
+DEFAULT_BASE_URL = "{{ c.default_base_url }}"
+{% else %}
+DEFAULT_BASE_URL: Optional[str] = None
+{% endif %}
+MAX_RETRY_DELAY = 30.0
+
+
+class {{ c.class }}:
+    """Client for the {{ c.title }}.
+
+    The client reads its settings from the environment when you don't pass them:
+{% if c.env_key %}
+    `{{ c.env_key }}` for the API key and
+{% endif %}
+    `{{ c.env_base_url }}` for the base URL.
+    """
+
+{% for r in c.resources %}
+    {{ r.module }}: {{ r.class }}
+{% endfor %}
+
+    def __init__(
+        self,
+        *,
+{% if c.env_key %}
+        api_key: Optional[str] = None,
+{% endif %}
+        base_url: Optional[str] = None,
+        timeout: float = 60.0,
+        max_retries: int = 2,
+        http_client: Optional[httpx.Client] = None,
+    ) -> None:
+{% if c.env_key %}
+        if api_key is None:
+            api_key = os.environ.get("{{ c.env_key }}")
+        if not api_key:
+            raise {{ c.error_base }}(
+                "No API key found. Pass api_key='...' to {{ c.class }}(), or set the "
+                "{{ c.env_key }} environment variable (export {{ c.env_key }}=<your key>)."
+            )
+        self.api_key = api_key
+{% endif %}
+        resolved_url = base_url or os.environ.get("{{ c.env_base_url }}") or DEFAULT_BASE_URL
+        if not resolved_url:
+            raise {{ c.error_base }}(
+                "No base URL found. Pass base_url='https://...' to {{ c.class }}(), or set the "
+                "{{ c.env_base_url }} environment variable."
+            )
+        self.base_url = resolved_url.rstrip("/")
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self._owns_http_client = http_client is None
+        self._http = http_client or httpx.Client()
+
+{% for r in c.resources %}
+        self.{{ r.module }} = {{ r.class }}(self)
+{% endfor %}
+
+    def close(self) -> None:
+        """Close the underlying HTTP client, unless you supplied your own."""
+        if self._owns_http_client:
+            self._http.close()
+
+    def __enter__(self) -> {{ c.class }}:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Optional[Mapping[str, Any]] = None,
+        headers: Optional[Mapping[str, Any]] = None,
+        json: Any = None,
+        data: Optional[Mapping[str, Any]] = None,
+        files: Optional[Mapping[str, Any]] = None,
+    ) -> httpx.Response:
+        """Send a request, retrying rate limits, server errors and connection failures."""
+        request_headers: Dict[str, Any] = {
+            "Accept": "application/json",
+            "User-Agent": f"{{ c.dist }}-python/{__version__}",
+{% if c.auth_header %}
+{% if c.auth_prefix %}
+            "{{ c.auth_header }}": f"{{ c.auth_prefix }}{self.api_key}",
+{% else %}
+            "{{ c.auth_header }}": self.api_key,
+{% endif %}
+{% endif %}
+        }
+        request_headers.update(_encode(headers or {}))
+        kwargs: Dict[str, Any] = {"headers": request_headers, "timeout": self.timeout}
+        if params:
+            kwargs["params"] = _encode(params)
+        if json is not None:
+            kwargs["json"] = _encode(json)
+        if data:
+            kwargs["data"] = _encode(data)
+        if files:
+            kwargs["files"] = {name: _encode_file(f) for name, f in _encode(files).items()}
+
+        url = self.base_url + path
+        for attempt in range(self.max_retries + 1):
+            final = attempt == self.max_retries
+            try:
+                response = self._http.request(method, url, **kwargs)
+            except httpx.TimeoutException as exc:
+                if final:
+                    raise APITimeoutError(
+                        f"{method} {path} timed out after {self.timeout:g}s. "
+                        "Raise timeout= on the client, or retry later."
+                    ) from exc
+            except httpx.TransportError as exc:
+                if final:
+                    raise APIConnectionError(
+                        f"{method} {path} could not reach {self.base_url}: {exc}. "
+                        "Check the network connection and base_url."
+                    ) from exc
+            else:
+                if response.is_success:
+                    return response
+                if final or not _is_retryable(response.status_code):
+                    raise make_error(response, method, path)
+                time.sleep(_retry_delay(attempt, parse_retry_after(response.headers)))
+                continue
+            time.sleep(_retry_delay(attempt))
+        raise AssertionError("unreachable")  # pragma: no cover
+
+
+def _is_retryable(status: int) -> bool:
+    return status in (408, 409, 429) or status >= 500
+
+
+def _retry_delay(attempt: int, retry_after: Optional[float] = None) -> float:
+    """Honor `Retry-After`; otherwise back off exponentially (0.5s, 1s, 2s, ...) with jitter."""
+    if retry_after is not None:
+        return min(retry_after, MAX_RETRY_DELAY)
+    delay = min(0.5 * 2**attempt, 8.0)
+    return delay * (1 - 0.25 * random.random())
+
+
+def _encode(value: Any) -> Any:
+    """Make a value JSON-ready and drop `None` entries from mappings."""
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json", by_alias=True, exclude_none=True)
+    if isinstance(value, Mapping):
+        return {k: _encode(v) for k, v in value.items() if v is not None}
+    if isinstance(value, (list, tuple)):
+        return [_encode(v) for v in value]
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
+def _encode_file(file: FileInput) -> Any:
+    """Read an upload fully so a retry can send it again."""
+    if isinstance(file, bytes):
+        return ("upload", file)
+    if isinstance(file, (str, os.PathLike)):
+        path = Path(file)
+        return (path.name, path.read_bytes())
+    name = os.path.basename(str(getattr(file, "name", ""))) or "upload"
+    return (name, file.read())

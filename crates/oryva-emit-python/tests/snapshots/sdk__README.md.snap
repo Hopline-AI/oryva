@@ -1,0 +1,42 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+# sarvam
+
+Speech, text and translation models for Indian languages.
+
+## Install
+
+```sh
+pip install sarvam
+```
+
+Requires Python 3.9 or newer.
+
+## Usage
+
+Set your API key in the environment (`export SARVAM_API_KEY=...`) or pass `api_key=` to the client.
+
+```python
+from sarvam import Sarvam
+
+client = Sarvam()
+result = client.text.translate(
+    input="...",
+    source_language_code="en-IN",
+    target_language_code="en-IN",
+)
+print(result)
+```
+
+Every method takes keyword arguments and returns a typed `pydantic` model. The client retries
+rate limits, server errors and dropped connections (`max_retries=2` by default) and raises
+`sarvam.APIError` subclasses with a message that says how to fix the problem.
+
+```python
+with Sarvam(timeout=30, max_retries=4) as client:
+    ...
+```
+
+Set `SARVAM_BASE_URL` or pass `base_url=` to point the client somewhere else.

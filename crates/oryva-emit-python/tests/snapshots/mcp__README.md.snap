@@ -1,0 +1,53 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+# sarvam-mcp
+
+An [MCP](https://modelcontextprotocol.io) server for the Sarvam API (lite fixture). It wraps the
+[`sarvam`](https://pypi.org/project/sarvam/) Python SDK and exposes one tool per
+API method, named `<resource>_<method>`:
+
+- `text_translate`: Translate text between Indian languages and English
+- `text_transliterate`: Convert text between scripts without translating it
+- `text_identify_language`: Identify the language and script of a piece of text
+- `text_to_speech_convert`: Synthesize speech from text
+- `speech_to_text_transcribe`: Transcribe an audio file
+- `pronunciations_list`: List custom pronunciations
+- `pronunciations_create`: Add a custom pronunciation
+- `pronunciations_get`: Fetch one custom pronunciation
+- `pronunciations_delete`: Delete a custom pronunciation
+
+## Install
+
+```sh
+pip install sarvam-mcp
+```
+
+Requires Python 3.10 or newer.
+
+## Run
+
+The server speaks MCP over stdio.
+
+```sh
+export SARVAM_API_KEY=...
+sarvam-mcp
+```
+
+Example client configuration:
+
+```json
+{
+  "mcpServers": {
+    "sarvam": {
+      "command": "sarvam-mcp",
+      "env": { "SARVAM_API_KEY": "..." }
+    }
+  }
+}
+```
+
+Tool results are JSON. Binary responses are written to the directory in
+`SARVAM_MCP_OUTPUT_DIR` (a temporary directory by default) and the tool returns the file's path
+and size. Set `SARVAM_BASE_URL` to point the server at a different API host.

@@ -1,0 +1,9 @@
+{% for r in c.resources | sort(attribute="module") %}
+from .{{ r.module }} import {{ r.class }}
+{% endfor %}
+
+__all__ = [
+{% for r in c.resources | sort(attribute="class") %}
+    "{{ r.class }}",
+{% endfor %}
+]

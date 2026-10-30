@@ -1,0 +1,105 @@
+"""MCP server exposing the {{ c.title }} as tools."""
+
+from __future__ import annotations
+
+{% for line in c.stdlib %}
+{{ line }}
+{% endfor %}
+
+{% for line in c.third_party %}
+{{ line }}
+{% endfor %}
+
+server = MCPServer(
+    "{{ c.pkg }}",
+{% if c.instructions %}
+    instructions={{ c.instructions | q }},
+{% endif %}
+)
+
+_client: Optional[{{ c.class }}] = None
+{% if c.has_binary %}
+_output_dir: Optional[Path] = None
+{% endif %}
+
+
+def _sdk() -> {{ c.class }}:
+    """Create the SDK client on first use so the server starts without credentials."""
+    global _client
+    if _client is None:
+        _client = {{ c.class }}()
+    return _client
+
+
+@contextmanager
+def _tool_errors() -> Iterator[None]:
+    """Report SDK errors as tool errors that carry the SDK's own message."""
+    try:
+        yield
+    except {{ c.error_base }} as exc:
+        raise ToolError(str(exc)) from exc
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json", exclude_none=True)
+    if isinstance(value, list):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    return value
+
+
+def _to_json(value: Any) -> str:
+    return json.dumps(_jsonable(value), indent=2, ensure_ascii=False)
+{% if c.has_binary %}
+
+
+def _save_binary(data: bytes, name: str, content_type: str) -> str:
+    """Write a binary response to disk and return its path and size, never the bytes."""
+    global _output_dir
+    if _output_dir is None:
+        configured = os.environ.get("{{ c.env_output_dir }}")
+        _output_dir = Path(configured) if configured else Path(tempfile.mkdtemp(prefix="{{ c.mcp_pkg }}-"))
+        _output_dir.mkdir(parents=True, exist_ok=True)
+    extension = mimetypes.guess_extension(content_type.split(";")[0].strip()) or ".bin"
+    handle, path = tempfile.mkstemp(prefix=f"{name}-", suffix=extension, dir=_output_dir)
+    with os.fdopen(handle, "wb") as f:
+        f.write(data)
+    return _to_json({"path": path, "size_bytes": len(data), "content_type": content_type})
+{% endif %}
+{% for t in c.tools %}
+
+
+@server.tool(
+    name="{{ t.name }}",
+    title={{ t.title | q }},
+    annotations=ToolAnnotations(
+        title={{ t.title | q }},
+        read_only_hint={{ "True" if t.read_only else "False" }},
+        destructive_hint={{ "True" if t.destructive else "False" }},
+        idempotent_hint={{ "True" if t.idempotent else "False" }},
+    ),
+    structured_output=False,
+)
+def {{ t.name }}(
+{% for p in t.params %}
+    {{ p }},
+{% endfor %}
+) -> str:
+{{ t.doc }}
+    with _tool_errors():
+{% for line in t.call %}
+        {{ line }}
+{% endfor %}
+    {{ t.returns }}
+{% endfor %}
+
+
+def main() -> None:
+    """Run the server over stdio."""
+    server.run()
+
+
+if __name__ == "__main__":
+    main()

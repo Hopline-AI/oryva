@@ -1,0 +1,33 @@
+"""{{ c.summary }}"""
+
+from ._client import {{ c.class }}
+from ._errors import (
+    APIConnectionError,
+    APIError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    InternalServerError,
+    NotFoundError,
+    PermissionDeniedError,
+    RateLimitError,
+    {{ c.error_base }},
+    UnprocessableEntityError,
+)
+from ._version import __version__
+
+__all__ = [
+    "APIConnectionError",
+    "APIError",
+    "APITimeoutError",
+    "AuthenticationError",
+    "BadRequestError",
+    "InternalServerError",
+    "NotFoundError",
+    "PermissionDeniedError",
+    "RateLimitError",
+    "{{ c.class }}",
+    "{{ c.error_base }}",
+    "UnprocessableEntityError",
+    "__version__",
+]

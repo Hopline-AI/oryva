@@ -1,0 +1,46 @@
+# {{ c.mcp_dist }}
+
+An [MCP](https://modelcontextprotocol.io) server for the {{ c.title }}. It wraps the
+[`{{ c.dist }}`](https://pypi.org/project/{{ c.dist }}/) Python SDK and exposes one tool per
+API method, named `<resource>_<method>`:
+
+{% for t in c.tools %}
+- `{{ t.name }}`: {{ t.title }}
+{% endfor %}
+
+## Install
+
+```sh
+pip install {{ c.mcp_dist }}
+```
+
+Requires Python 3.10 or newer.
+
+## Run
+
+The server speaks MCP over stdio.
+
+```sh
+{% if c.env_key %}
+export {{ c.env_key }}=...
+{% endif %}
+{{ c.mcp_dist }}
+```
+
+Example client configuration:
+
+```json
+{
+  "mcpServers": {
+    "{{ c.pkg }}": {
+      "command": "{{ c.mcp_dist }}"{% if c.env_key %},
+      "env": { "{{ c.env_key }}": "..." }{% endif %}
+
+    }
+  }
+}
+```
+
+Tool results are JSON. Binary responses are written to the directory in
+`{{ c.env_output_dir }}` (a temporary directory by default) and the tool returns the file's path
+and size. Set `{{ c.env_base_url }}` to point the server at a different API host.

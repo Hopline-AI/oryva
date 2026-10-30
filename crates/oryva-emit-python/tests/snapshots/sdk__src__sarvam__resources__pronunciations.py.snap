@@ -1,0 +1,79 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, List, Optional
+from urllib.parse import quote
+
+from pydantic import TypeAdapter
+
+from ..types import Pronunciation
+
+if TYPE_CHECKING:
+    from .._client import Sarvam
+
+
+class Pronunciations:
+    """Pronunciations endpoints."""
+
+    def __init__(self, client: Sarvam) -> None:
+        self._client = client
+
+    def list(
+        self,
+        *,
+        limit: Optional[int] = None,
+    ) -> List[Pronunciation]:
+        """List custom pronunciations.
+
+        Args:
+            limit: Maximum number of entries to return (at most 100).
+        """
+        params = {"limit": limit}
+        response = self._client._request("GET", "/pronunciations", params=params)
+        return TypeAdapter(List[Pronunciation]).validate_python(response.json())
+
+    def create(
+        self,
+        *,
+        word: str,
+        pronunciation: str,
+    ) -> Pronunciation:
+        """Add a custom pronunciation."""
+        body = {
+            "word": word,
+            "pronunciation": pronunciation,
+        }
+        response = self._client._request("POST", "/pronunciations", json=body)
+        return Pronunciation.model_validate(response.json())
+
+    def get(
+        self,
+        *,
+        pronunciation_id: str,
+    ) -> Pronunciation:
+        """Fetch one custom pronunciation.
+
+        Raises:
+            NotFoundError: No pronunciation with that ID.
+        """
+        path = f"/pronunciations/{quote(pronunciation_id, safe='')}"
+        response = self._client._request("GET", path)
+        return Pronunciation.model_validate(response.json())
+
+    def delete(
+        self,
+        *,
+        pronunciation_id: str,
+    ) -> None:
+        """Delete a custom pronunciation.
+
+        Permanent. Confirm the ID with `pronunciations_get` first.
+
+        Raises:
+            NotFoundError: No pronunciation with that ID.
+        """
+        path = f"/pronunciations/{quote(pronunciation_id, safe='')}"
+        self._client._request("DELETE", path)

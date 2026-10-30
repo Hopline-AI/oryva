@@ -1,0 +1,301 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+"""MCP server exposing the Sarvam API (lite fixture) as tools."""
+
+from __future__ import annotations
+
+import json
+from contextlib import contextmanager
+from typing import Annotated, Any, Iterator, Literal, Optional, Union
+
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp_types import ToolAnnotations
+from pydantic import BaseModel, Field
+from sarvam import Sarvam, SarvamError
+from sarvam.types import LanguageCode
+
+server = MCPServer(
+    "sarvam",
+    instructions="Speech, text and translation models for Indian languages.",
+)
+
+_client: Optional[Sarvam] = None
+
+
+def _sdk() -> Sarvam:
+    """Create the SDK client on first use so the server starts without credentials."""
+    global _client
+    if _client is None:
+        _client = Sarvam()
+    return _client
+
+
+@contextmanager
+def _tool_errors() -> Iterator[None]:
+    """Report SDK errors as tool errors that carry the SDK's own message."""
+    try:
+        yield
+    except SarvamError as exc:
+        raise ToolError(str(exc)) from exc
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json", exclude_none=True)
+    if isinstance(value, list):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    return value
+
+
+def _to_json(value: Any) -> str:
+    return json.dumps(_jsonable(value), indent=2, ensure_ascii=False)
+
+
+@server.tool(
+    name="text_translate",
+    title="Translate text between Indian languages and English",
+    annotations=ToolAnnotations(
+        title="Translate text between Indian languages and English",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    structured_output=False,
+)
+def text_translate(
+    input: Annotated[
+        str, Field(description="Text to translate. At most 2000 characters.")
+    ],
+    source_language_code: Annotated[
+        Union[LanguageCode, Literal["auto"]],
+        Field(description="Source language, or `auto` to detect it."),
+    ],
+    target_language_code: LanguageCode,
+    mode: Optional[
+        Literal["formal", "modern-colloquial", "classic-colloquial", "code-mixed"]
+    ] = None,
+) -> str:
+    """Translate text between Indian languages and English."""
+    with _tool_errors():
+        result = _sdk().text.translate(
+            input=input,
+            source_language_code=source_language_code,
+            target_language_code=target_language_code,
+            mode=mode,
+        )
+    return _to_json(result)
+
+
+@server.tool(
+    name="text_transliterate",
+    title="Convert text between scripts without translating it",
+    annotations=ToolAnnotations(
+        title="Convert text between scripts without translating it",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    structured_output=False,
+)
+def text_transliterate(
+    input: str,
+    source_language_code: LanguageCode,
+    target_language_code: LanguageCode,
+) -> str:
+    """Convert text between scripts without translating it."""
+    with _tool_errors():
+        result = _sdk().text.transliterate(
+            input=input,
+            source_language_code=source_language_code,
+            target_language_code=target_language_code,
+        )
+    return _to_json(result)
+
+
+@server.tool(
+    name="text_identify_language",
+    title="Identify the language and script of a piece of text",
+    annotations=ToolAnnotations(
+        title="Identify the language and script of a piece of text",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def text_identify_language(
+    input: str,
+) -> str:
+    """Identify the language and script of a piece of text.
+
+    Call this before translate only when you need the language code itself; translate already accepts `auto`.
+    """
+    with _tool_errors():
+        result = _sdk().text.identify_language(input=input)
+    return _to_json(result)
+
+
+@server.tool(
+    name="text_to_speech_convert",
+    title="Synthesize speech from text",
+    annotations=ToolAnnotations(
+        title="Synthesize speech from text",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    structured_output=False,
+)
+def text_to_speech_convert(
+    text: str,
+    target_language_code: LanguageCode,
+    speaker: Optional[
+        Literal["anushka", "abhilash", "manisha", "vidya", "arya", "karun", "hitesh"]
+    ] = None,
+    pace: Annotated[
+        Optional[float], Field(description="Speaking rate from 0.5 to 2.0.")
+    ] = None,
+) -> str:
+    """Synthesize speech from text.
+
+    Returns base64-encoded WAV audio in `audios`. Save it to a file rather than reading it back. At most 1500 characters of text per call.
+    """
+    with _tool_errors():
+        result = _sdk().text_to_speech.convert(
+            text=text,
+            target_language_code=target_language_code,
+            speaker=speaker,
+            pace=pace,
+        )
+    return _to_json(result)
+
+
+@server.tool(
+    name="speech_to_text_transcribe",
+    title="Transcribe an audio file",
+    annotations=ToolAnnotations(
+        title="Transcribe an audio file",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    structured_output=False,
+)
+def speech_to_text_transcribe(
+    file: Annotated[
+        str,
+        Field(
+            description="WAV or MP3 audio, at most 30 seconds. Path of a file on the machine running this server."
+        ),
+    ],
+    language_code: Annotated[
+        Optional[str], Field(description="Spoken language, or `unknown` to detect it.")
+    ] = None,
+) -> str:
+    """Transcribe an audio file."""
+    with _tool_errors():
+        result = _sdk().speech_to_text.transcribe(
+            file=file, language_code=language_code
+        )
+    return _to_json(result)
+
+
+@server.tool(
+    name="pronunciations_list",
+    title="List custom pronunciations",
+    annotations=ToolAnnotations(
+        title="List custom pronunciations",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def pronunciations_list(
+    limit: Annotated[
+        Optional[int],
+        Field(description="Maximum number of entries to return (at most 100)."),
+    ] = None,
+) -> str:
+    """List custom pronunciations."""
+    with _tool_errors():
+        result = _sdk().pronunciations.list(limit=limit)
+    return _to_json(result)
+
+
+@server.tool(
+    name="pronunciations_create",
+    title="Add a custom pronunciation",
+    annotations=ToolAnnotations(
+        title="Add a custom pronunciation",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    structured_output=False,
+)
+def pronunciations_create(
+    word: str,
+    pronunciation: str,
+) -> str:
+    """Add a custom pronunciation."""
+    with _tool_errors():
+        result = _sdk().pronunciations.create(word=word, pronunciation=pronunciation)
+    return _to_json(result)
+
+
+@server.tool(
+    name="pronunciations_get",
+    title="Fetch one custom pronunciation",
+    annotations=ToolAnnotations(
+        title="Fetch one custom pronunciation",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def pronunciations_get(
+    pronunciation_id: str,
+) -> str:
+    """Fetch one custom pronunciation."""
+    with _tool_errors():
+        result = _sdk().pronunciations.get(pronunciation_id=pronunciation_id)
+    return _to_json(result)
+
+
+@server.tool(
+    name="pronunciations_delete",
+    title="Delete a custom pronunciation",
+    annotations=ToolAnnotations(
+        title="Delete a custom pronunciation",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def pronunciations_delete(
+    pronunciation_id: str,
+) -> str:
+    """Delete a custom pronunciation.
+
+    Permanent. Confirm the ID with `pronunciations_get` first.
+    """
+    with _tool_errors():
+        _sdk().pronunciations.delete(pronunciation_id=pronunciation_id)
+    return "Done. The API returned no content."
+
+
+def main() -> None:
+    """Run the server over stdio."""
+    server.run()
+
+
+if __name__ == "__main__":
+    main()

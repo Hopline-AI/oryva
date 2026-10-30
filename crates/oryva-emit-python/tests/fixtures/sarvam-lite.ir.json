@@ -1,0 +1,927 @@
+{
+  "ir_version": 1,
+  "name": "sarvam",
+  "title": "Sarvam API (lite fixture)",
+  "version": "1.0",
+  "description": "Speech, text and translation models for Indian languages.",
+  "base_url": "https://api.sarvam.ai",
+  "auth": {
+    "kind": "api_key",
+    "header": "api-subscription-key",
+    "env_var": "SARVAM_API_KEY"
+  },
+  "resources": [
+    {
+      "name": "text",
+      "description": null,
+      "methods": [
+        {
+          "name": "translate",
+          "http_method": "POST",
+          "path": "/translate",
+          "summary": "Translate text between Indian languages and English.",
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "json",
+            "required": true,
+            "ty": {
+              "kind": "named",
+              "name": "TranslateRequest"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "TranslateResponse"
+            }
+          },
+          "errors": [
+            {
+              "status": 400,
+              "description": "The request was invalid. The message names the offending field.",
+              "ty": {
+                "kind": "named",
+                "name": "ErrorResponse"
+              }
+            },
+            {
+              "status": 429,
+              "description": "Too many requests. Retry after the number of seconds in Retry-After.",
+              "ty": {
+                "kind": "named",
+                "name": "ErrorResponse"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "transliterate",
+          "http_method": "POST",
+          "path": "/transliterate",
+          "summary": "Convert text between scripts without translating it.",
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "json",
+            "required": true,
+            "ty": {
+              "kind": "named",
+              "name": "TextTransliterateRequest"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "TextTransliterateResponse"
+            }
+          },
+          "errors": [
+            {
+              "status": 400,
+              "description": "The request was invalid. The message names the offending field.",
+              "ty": {
+                "kind": "named",
+                "name": "ErrorResponse"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "identify_language",
+          "http_method": "POST",
+          "path": "/text-lid",
+          "summary": "Identify the language and script of a piece of text.",
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "json",
+            "required": true,
+            "ty": {
+              "kind": "named",
+              "name": "TextIdentifyLanguageRequest"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "TextIdentifyLanguageResponse"
+            }
+          },
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": "Call this before translate only when you need the language code itself; translate already accepts `auto`.",
+            "examples": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "text_to_speech",
+      "description": null,
+      "methods": [
+        {
+          "name": "convert",
+          "http_method": "POST",
+          "path": "/text-to-speech",
+          "summary": "Synthesize speech from text.",
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "json",
+            "required": true,
+            "ty": {
+              "kind": "named",
+              "name": "TextToSpeechConvertRequest"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "TextToSpeechConvertResponse"
+            }
+          },
+          "errors": [
+            {
+              "status": 400,
+              "description": "The request was invalid. The message names the offending field.",
+              "ty": {
+                "kind": "named",
+                "name": "ErrorResponse"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": "Returns base64-encoded WAV audio in `audios`. Save it to a file rather than reading it back. At most 1500 characters of text per call.",
+            "examples": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "speech_to_text",
+      "description": null,
+      "methods": [
+        {
+          "name": "transcribe",
+          "http_method": "POST",
+          "path": "/speech-to-text",
+          "summary": "Transcribe an audio file.",
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "multipart",
+            "required": true,
+            "ty": {
+              "kind": "named",
+              "name": "SpeechToTextTranscribeRequest"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "SpeechToTextTranscribeResponse"
+            }
+          },
+          "errors": [
+            {
+              "status": 400,
+              "description": "The request was invalid. The message names the offending field.",
+              "ty": {
+                "kind": "named",
+                "name": "ErrorResponse"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "pronunciations",
+      "description": null,
+      "methods": [
+        {
+          "name": "list",
+          "http_method": "GET",
+          "path": "/pronunciations",
+          "summary": "List custom pronunciations.",
+          "description": null,
+          "params": [
+            {
+              "name": "limit",
+              "ident": "limit",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "integer"
+              },
+              "description": "Maximum number of entries to return (at most 100)."
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "array",
+              "items": {
+                "kind": "named",
+                "name": "Pronunciation"
+              }
+            }
+          },
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "create",
+          "http_method": "POST",
+          "path": "/pronunciations",
+          "summary": "Add a custom pronunciation.",
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "json",
+            "required": true,
+            "ty": {
+              "kind": "named",
+              "name": "PronunciationsCreateRequest"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Pronunciation"
+            }
+          },
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "get",
+          "http_method": "GET",
+          "path": "/pronunciations/{pronunciation_id}",
+          "summary": "Fetch one custom pronunciation.",
+          "description": null,
+          "params": [
+            {
+              "name": "pronunciation_id",
+              "ident": "pronunciation_id",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Pronunciation"
+            }
+          },
+          "errors": [
+            {
+              "status": 404,
+              "description": "No pronunciation with that ID.",
+              "ty": null
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "delete",
+          "http_method": "DELETE",
+          "path": "/pronunciations/{pronunciation_id}",
+          "summary": "Delete a custom pronunciation.",
+          "description": null,
+          "params": [
+            {
+              "name": "pronunciation_id",
+              "ident": "pronunciation_id",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "empty"
+          },
+          "errors": [
+            {
+              "status": 404,
+              "description": "No pronunciation with that ID.",
+              "ty": null
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": true,
+            "idempotent": true,
+            "hint": "Permanent. Confirm the ID with `pronunciations_get` first.",
+            "examples": []
+          }
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "LanguageCode",
+      "description": "BCP-47 code of an Indian language or English.",
+      "shape": {
+        "kind": "enum",
+        "values": [
+          "en-IN",
+          "hi-IN",
+          "bn-IN",
+          "ta-IN",
+          "te-IN",
+          "kn-IN",
+          "ml-IN",
+          "mr-IN",
+          "gu-IN",
+          "pa-IN",
+          "od-IN"
+        ]
+      }
+    },
+    {
+      "name": "TranslateRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "input",
+            "ident": "input",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": "Text to translate. At most 2000 characters."
+          },
+          {
+            "name": "source_language_code",
+            "ident": "source_language_code",
+            "ty": {
+              "kind": "union",
+              "variants": [
+                {
+                  "kind": "named",
+                  "name": "LanguageCode"
+                },
+                {
+                  "kind": "enum",
+                  "values": [
+                    "auto"
+                  ]
+                }
+              ]
+            },
+            "required": true,
+            "description": "Source language, or `auto` to detect it."
+          },
+          {
+            "name": "target_language_code",
+            "ident": "target_language_code",
+            "ty": {
+              "kind": "named",
+              "name": "LanguageCode"
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "mode",
+            "ident": "mode",
+            "ty": {
+              "kind": "enum",
+              "values": [
+                "formal",
+                "modern-colloquial",
+                "classic-colloquial",
+                "code-mixed"
+              ]
+            },
+            "required": false,
+            "description": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "TranslateResponse",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "request_id",
+            "ident": "request_id",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": false,
+            "description": null
+          },
+          {
+            "name": "translated_text",
+            "ident": "translated_text",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "source_language_code",
+            "ident": "source_language_code",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": "The detected language when the request used `auto`."
+          }
+        ]
+      }
+    },
+    {
+      "name": "Pronunciation",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "id",
+            "ident": "id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "word",
+            "ident": "word",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "pronunciation",
+            "ident": "pronunciation",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": "Phonetic spelling the speech models should use."
+          },
+          {
+            "name": "created_at",
+            "ident": "created_at",
+            "ty": {
+              "kind": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "description": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "ErrorResponse",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "error",
+            "ident": "error",
+            "ty": {
+              "kind": "named",
+              "name": "ErrorResponseError"
+            },
+            "required": true,
+            "description": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "ErrorResponseError",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "message",
+            "ident": "message",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "code",
+            "ident": "code",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "request_id",
+            "ident": "request_id",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": false,
+            "description": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "TextTransliterateRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "input",
+            "ident": "input",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "source_language_code",
+            "ident": "source_language_code",
+            "ty": {
+              "kind": "named",
+              "name": "LanguageCode"
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "target_language_code",
+            "ident": "target_language_code",
+            "ty": {
+              "kind": "named",
+              "name": "LanguageCode"
+            },
+            "required": true,
+            "description": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "TextTransliterateResponse",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "transliterated_text",
+            "ident": "transliterated_text",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "TextIdentifyLanguageRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "input",
+            "ident": "input",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "TextIdentifyLanguageResponse",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "language_code",
+            "ident": "language_code",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": false,
+            "description": null
+          },
+          {
+            "name": "script_code",
+            "ident": "script_code",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": false,
+            "description": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "TextToSpeechConvertRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "text",
+            "ident": "text",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "target_language_code",
+            "ident": "target_language_code",
+            "ty": {
+              "kind": "named",
+              "name": "LanguageCode"
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "speaker",
+            "ident": "speaker",
+            "ty": {
+              "kind": "enum",
+              "values": [
+                "anushka",
+                "abhilash",
+                "manisha",
+                "vidya",
+                "arya",
+                "karun",
+                "hitesh"
+              ]
+            },
+            "required": false,
+            "description": null
+          },
+          {
+            "name": "pace",
+            "ident": "pace",
+            "ty": {
+              "kind": "number"
+            },
+            "required": false,
+            "description": "Speaking rate from 0.5 to 2.0."
+          }
+        ]
+      }
+    },
+    {
+      "name": "TextToSpeechConvertResponse",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "request_id",
+            "ident": "request_id",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": false,
+            "description": null
+          },
+          {
+            "name": "audios",
+            "ident": "audios",
+            "ty": {
+              "kind": "array",
+              "items": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": true,
+            "description": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "SpeechToTextTranscribeRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "file",
+            "ident": "file",
+            "ty": {
+              "kind": "file"
+            },
+            "required": true,
+            "description": "WAV or MP3 audio, at most 30 seconds."
+          },
+          {
+            "name": "language_code",
+            "ident": "language_code",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": "Spoken language, or `unknown` to detect it."
+          }
+        ]
+      }
+    },
+    {
+      "name": "SpeechToTextTranscribeResponse",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "transcript",
+            "ident": "transcript",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "language_code",
+            "ident": "language_code",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": false,
+            "description": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "PronunciationsCreateRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "word",
+            "ident": "word",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "pronunciation",
+            "ident": "pronunciation",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+"""Speech, text and translation models for Indian languages."""
+
+from ._client import Sarvam
+from ._errors import (
+    APIConnectionError,
+    APIError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    InternalServerError,
+    NotFoundError,
+    PermissionDeniedError,
+    RateLimitError,
+    SarvamError,
+    UnprocessableEntityError,
+)
+from ._version import __version__
+
+__all__ = [
+    "APIConnectionError",
+    "APIError",
+    "APITimeoutError",
+    "AuthenticationError",
+    "BadRequestError",
+    "InternalServerError",
+    "NotFoundError",
+    "PermissionDeniedError",
+    "RateLimitError",
+    "Sarvam",
+    "SarvamError",
+    "UnprocessableEntityError",
+    "__version__",
+]
