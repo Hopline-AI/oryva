@@ -6,8 +6,8 @@ fn parse(name: &str) -> oryva_ir::Api {
 }
 
 #[test]
-fn sarvam_lite() {
-    insta::assert_json_snapshot!(parse("sarvam-lite.yaml"));
+fn ledger() {
+    insta::assert_json_snapshot!(parse("ledger.yaml"));
 }
 
 #[test]

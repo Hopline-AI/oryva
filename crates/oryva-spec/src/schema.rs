@@ -2,22 +2,25 @@
 
 use crate::invalid;
 use heck::{ToSnakeCase, ToUpperCamelCase};
-use oryva_ir::{Field, Shape, TypeDef, TypeRef};
+use oryva_ir::{Discriminator, DiscriminatorCase, Field, Shape, TypeDef, TypeRef};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::SpecError;
 
 pub(crate) struct Ctx<'a> {
     pub root: &'a Value,
     pub types: BTreeMap<String, TypeDef>,
+    /// Names of component schemas that accept null; every reference to one is wrapped in
+    /// `Nullable`.
+    nullable: HashSet<String>,
 }
 
 /// What a schema is before it is given a name.
 enum Node {
     Object(Vec<Field>),
-    Enum(Vec<String>),
-    Union(Vec<TypeRef>, Option<String>),
+    Enum(Vec<Value>),
+    Union(Vec<TypeRef>, Option<Discriminator>),
     Plain(TypeRef),
 }
 
@@ -42,6 +45,34 @@ fn is_null_schema(v: &Value) -> bool {
     }
 }
 
+/// Whether a schema accepts null, judged from the schema alone.
+fn accepts_null(s: &Value) -> bool {
+    let by_type = match s.get("type") {
+        Some(Value::String(t)) => t == "null",
+        Some(Value::Array(a)) => a.iter().any(|t| t == "null"),
+        _ => false,
+    };
+    let by_alternative = ["oneOf", "anyOf"].iter().any(|k| {
+        s.get(k)
+            .and_then(Value::as_array)
+            .is_some_and(|a| a.iter().any(is_null_schema))
+    });
+    s.get("nullable").and_then(Value::as_bool) == Some(true)
+        || by_type
+        || by_alternative
+        || s.get("enum")
+            .and_then(Value::as_array)
+            .is_some_and(|a| a.iter().any(Value::is_null))
+}
+
+pub(crate) fn default_of(s: &Value) -> Option<Value> {
+    s.get("default").filter(|v| !v.is_null()).cloned()
+}
+
+fn unesc(s: &str) -> String {
+    s.replace("~1", "/").replace("~0", "~")
+}
+
 fn nullable(t: TypeRef) -> TypeRef {
     match t {
         TypeRef::Nullable { .. } | TypeRef::Any => t,
@@ -54,6 +85,7 @@ impl<'a> Ctx<'a> {
         Ctx {
             root,
             types: BTreeMap::new(),
+            nullable: HashSet::new(),
         }
     }
 
@@ -100,10 +132,12 @@ impl<'a> Ctx<'a> {
 
     fn schema_ref(&self, r: &str, at: &str) -> Result<TypeRef, SpecError> {
         self.lookup(r, "schemas", at)?;
-        let key = r["#/components/schemas/".len()..]
-            .replace("~1", "/")
-            .replace("~0", "~");
-        Ok(TypeRef::Named { name: pascal(&key) })
+        let name = pascal(&unesc(&r["#/components/schemas/".len()..]));
+        let t = TypeRef::Named { name };
+        Ok(match &t {
+            TypeRef::Named { name } if self.nullable.contains(name) => nullable(t.clone()),
+            _ => t,
+        })
     }
 
     pub fn components(&mut self) -> Result<(), SpecError> {
@@ -114,13 +148,17 @@ impl<'a> Ctx<'a> {
         else {
             return Ok(());
         };
+        self.nullable = schemas
+            .iter()
+            .filter(|(_, s)| accepts_null(s))
+            .map(|(k, _)| pascal(k))
+            .collect();
         for (key, s) in schemas {
             let name = pascal(key);
             let at = format!("#/components/schemas/{}", esc(key));
             let (node, null) = self.node(s, &name, &at, true)?;
             let shape = match node {
-                // A nullable object/enum/union component loses its nullability here; the IR
-                // has no way to say it on a `Named` reference.
+                // Nullability of a component lives on its references (see `schema_ref`).
                 Node::Object(fields) => Shape::Object { fields },
                 Node::Enum(values) => Shape::Enum { values },
                 Node::Union(variants, discriminator) => Shape::Union {
@@ -128,7 +166,11 @@ impl<'a> Ctx<'a> {
                     discriminator,
                 },
                 Node::Plain(t) => Shape::Alias {
-                    target: if null { nullable(t) } else { t },
+                    target: if null && !self.nullable.contains(&name) {
+                        nullable(t)
+                    } else {
+                        t
+                    },
                 },
             };
             self.add(&name, s, shape, &at)?;
@@ -227,6 +269,7 @@ impl<'a> Ctx<'a> {
             null |= live.len() < all.len();
             let single = live.len() == 1;
             let mut variants = Vec::new();
+            let schemas: Vec<&'a Value> = live.iter().map(|(_, v)| *v).collect();
             for (n, (i, v)) in live.into_iter().enumerate() {
                 let h = if single && !top {
                     hint.to_string()
@@ -238,7 +281,10 @@ impl<'a> Ctx<'a> {
             let node = match variants.len() {
                 0 => Node::Plain(TypeRef::Any),
                 1 => Node::Plain(variants.remove(0)),
-                _ => Node::Union(variants, string_at(&s["discriminator"], "propertyName")),
+                _ => {
+                    let d = self.discriminator(s, &schemas, &variants, at)?;
+                    Node::Union(variants, d)
+                }
             };
             return Ok((node, null));
         }
@@ -249,15 +295,17 @@ impl<'a> Ctx<'a> {
         };
         if let Some(lits) = literals {
             null |= lits.iter().any(|v| v.is_null());
-            let strings: Vec<String> = lits
+            let values: Vec<Value> = lits
                 .iter()
                 .filter(|v| !v.is_null())
-                .filter_map(|v| v.as_str().map(String::from))
+                .map(|v| (*v).clone())
                 .collect();
-            let non_null = lits.iter().filter(|v| !v.is_null()).count();
-            // Enums of numbers fall through and become plain integers or numbers.
-            if !strings.is_empty() && strings.len() == non_null {
-                return Ok((Node::Enum(strings), null));
+            let integer = |v: &Value| v.is_i64() || v.is_u64();
+            // Mixed enums and enums of other types fall through to their base type.
+            if !values.is_empty()
+                && (values.iter().all(Value::is_string) || values.iter().all(integer))
+            {
+                return Ok((Node::Enum(values), null));
             }
         }
 
@@ -290,6 +338,114 @@ impl<'a> Ctx<'a> {
                 Ok((Node::Union(variants, None), null))
             }
         }
+    }
+
+    /// `mapping` entries first, in spec order; variants it leaves out use the `const` (or
+    /// single-value enum) on the discriminator property, else the component name.
+    fn discriminator(
+        &self,
+        s: &Value,
+        schemas: &[&'a Value],
+        variants: &[TypeRef],
+        at: &str,
+    ) -> Result<Option<Discriminator>, SpecError> {
+        let Some(d) = s.get("discriminator") else {
+            return Ok(None);
+        };
+        let d_at = format!("{at}/discriminator");
+        let Some(property) = string_at(d, "propertyName") else {
+            return invalid(&d_at, "`propertyName` is required");
+        };
+        let mut mapping = Vec::new();
+        for (value, target) in d
+            .get("mapping")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            let m_at = format!("{d_at}/mapping/{}", esc(value));
+            let Some(t) = target.as_str() else {
+                return invalid(&m_at, "expected a schema name or a $ref string");
+            };
+            let prefix = "#/components/schemas/";
+            let (r, name) = match t.strip_prefix(prefix) {
+                Some(rest) => (t.to_string(), unesc(rest)),
+                None => (format!("{prefix}{}", esc(t)), t.to_string()),
+            };
+            self.lookup(&r, "schemas", &m_at)?;
+            mapping.push(DiscriminatorCase {
+                value: value.clone(),
+                type_name: pascal(&name),
+            });
+        }
+        for (schema, variant) in schemas.iter().zip(variants) {
+            let variant = match variant {
+                TypeRef::Nullable { inner } => inner,
+                v => v,
+            };
+            let TypeRef::Named { name } = variant else {
+                continue;
+            };
+            if mapping.iter().any(|c| &c.type_name == name) {
+                continue;
+            }
+            let value = self
+                .const_value(schema, &property, at)
+                .unwrap_or_else(|| name.clone());
+            mapping.push(DiscriminatorCase {
+                value,
+                type_name: name.clone(),
+            });
+        }
+        Ok(Some(Discriminator { property, mapping }))
+    }
+
+    /// The only value a variant allows for `property`, if it pins one.
+    fn const_value(&self, schema: &'a Value, property: &str, at: &str) -> Option<String> {
+        let mut props = Vec::new();
+        self.collect(schema, at, 0, &mut props, &mut Vec::new())
+            .ok()?;
+        let (_, p) = props.into_iter().find(|(n, _)| n == property)?;
+        let (p, _) = self.resolve(p, at, "schemas").ok()?;
+        let single = p
+            .get("enum")
+            .and_then(Value::as_array)
+            .and_then(|e| match e.as_slice() {
+                [one] => Some(one),
+                _ => None,
+            });
+        p.get("const").or(single)?.as_str().map(String::from)
+    }
+
+    /// Strip `Nullable` and follow aliases.
+    fn peel<'t>(&'t self, mut t: &'t TypeRef) -> &'t TypeRef {
+        for _ in 0..16 {
+            t = match t {
+                TypeRef::Nullable { inner } => inner,
+                TypeRef::Named { name } => match self.types.get(name).map(|d| &d.shape) {
+                    Some(Shape::Alias { target }) => target,
+                    _ => return t,
+                },
+                _ => return t,
+            };
+        }
+        t
+    }
+
+    /// Where a path of field names leads, starting from `start`. `None` if a step is not an
+    /// object field.
+    pub fn follow<'t>(&'t self, start: &'t TypeRef, path: &[String]) -> Option<&'t TypeRef> {
+        let mut cur = start;
+        for seg in path {
+            let TypeRef::Named { name } = self.peel(cur) else {
+                return None;
+            };
+            let Some(Shape::Object { fields }) = self.types.get(name).map(|d| &d.shape) else {
+                return None;
+            };
+            cur = &fields.iter().find(|f| &f.name == seg)?.ty;
+        }
+        Some(self.peel(cur))
     }
 
     fn kind(&mut self, kind: &str, s: &'a Value, hint: &str, at: &str) -> Result<Node, SpecError> {
@@ -398,6 +554,7 @@ impl<'a> Ctx<'a> {
                 ident: name.to_snake_case(),
                 required: required.contains(&name),
                 description: string_at(schema, "description"),
+                default: default_of(schema),
                 ty,
                 name,
             });

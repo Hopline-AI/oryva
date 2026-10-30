@@ -2,11 +2,11 @@
 
 use crate::SpecError;
 use crate::invalid;
-use crate::schema::{Ctx, esc, pascal, string_at};
+use crate::schema::{Ctx, default_of, esc, pascal, string_at};
 use heck::ToSnakeCase;
 use oryva_ir::{
-    AgentNotes, Body, BodyEncoding, ErrorCase, HttpMethod, Method, Param, ParamLocation, Resource,
-    ResponseBody, TypeRef,
+    AgentNotes, Body, BodyEncoding, ErrorCase, HttpMethod, Method, Pagination, Param,
+    ParamLocation, Resource, ResponseBody, TypeRef, Webhook,
 };
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -23,6 +23,14 @@ fn json_key(content: &Map<String, Value>) -> Option<&String> {
     content
         .keys()
         .find(|k| k.starts_with("application/json") || k.ends_with("+json"))
+}
+
+/// A schema that describes raw bytes.
+fn is_binary(schema: Option<&Value>) -> bool {
+    schema.is_some_and(|s| {
+        s.get("format").and_then(Value::as_str) == Some("binary")
+            || s.get("contentMediaType").is_some()
+    })
 }
 
 fn ext_str<'v>(op: &'v Value, key: &str, at: &str) -> Result<Option<&'v str>, SpecError> {
@@ -59,8 +67,10 @@ impl<'a> Ctx<'a> {
                 }
                 let hint = format!("{}{}", pascal(&resource), pascal(&name));
                 let (response, errors) = self.responses(op, &hint, &at)?;
+                let params = self.params(item, &item_at, op, &at, &hint)?;
                 let method = Method {
-                    params: self.params(item, &item_at, op, &at, &hint)?,
+                    pagination: self.pagination(op, &params, &response, &at)?,
+                    params,
                     body: self.body(op, &at, &hint)?,
                     name,
                     http_method: http,
@@ -169,6 +179,7 @@ impl<'a> Ctx<'a> {
                 required: location == ParamLocation::Path
                     || p.get("required").and_then(Value::as_bool).unwrap_or(false),
                 description: string_at(p, "description"),
+                default: p.get("schema").and_then(default_of),
                 location,
                 ty,
                 name,
@@ -183,6 +194,11 @@ impl<'a> Ctx<'a> {
         };
         let (rb, rb_at) = self.resolve(rb, &format!("{at}/requestBody"), "requestBodies")?;
         let content = rb.get("content").and_then(Value::as_object);
+        let binary = |c: &'a Map<String, Value>| {
+            c.iter()
+                .find(|(k, m)| *k == "application/octet-stream" || is_binary(m.get("schema")))
+                .map(|(k, _)| (k, BodyEncoding::Binary))
+        };
         let found = content.and_then(|c| {
             json_key(c)
                 .map(|k| (k, BodyEncoding::Json))
@@ -196,6 +212,7 @@ impl<'a> Ctx<'a> {
                         .find(|k| *k == "application/x-www-form-urlencoded")
                         .map(|k| (k, BodyEncoding::Form))
                 })
+                .or_else(|| binary(c))
         });
         let (Some(content), Some((key, encoding))) = (content, found) else {
             let offered: Vec<&str> = content
@@ -205,11 +222,12 @@ impl<'a> Ctx<'a> {
             return invalid(
                 &rb_at,
                 format!(
-                    "request body must offer application/json, multipart/form-data or application/x-www-form-urlencoded; found {offered:?}"
+                    "request body must offer application/json, multipart/form-data, application/x-www-form-urlencoded or a binary type; found {offered:?}"
                 ),
             );
         };
         let ty = match content[key].get("schema") {
+            _ if encoding == BodyEncoding::Binary => TypeRef::File,
             Some(s) => self.ty(
                 s,
                 &format!("{hint}Request"),
@@ -247,6 +265,13 @@ impl<'a> Ctx<'a> {
                 if let Some(k) = json_key(content) {
                     let ty = self.media_type(&content[k], &r_at, k, &format!("{hint}Response"))?;
                     response = ResponseBody::Json { ty };
+                } else if let Some(k) = content.keys().find(|k| {
+                    k.split(';')
+                        .next()
+                        .is_some_and(|m| m.trim() == "text/event-stream")
+                }) {
+                    let event = self.media_type(&content[k], &r_at, k, &format!("{hint}Event"))?;
+                    response = ResponseBody::EventStream { event };
                 } else if content.keys().any(|k| k.starts_with("text/")) {
                     response = ResponseBody::Text;
                 } else if let Some(k) = content.keys().next() {
@@ -278,6 +303,159 @@ impl<'a> Ctx<'a> {
             });
         }
         Ok((response, errors))
+    }
+
+    /// `x-oryva-pagination`, checked against the operation's parameters and 2xx response.
+    fn pagination(
+        &self,
+        op: &Value,
+        params: &[Param],
+        response: &ResponseBody,
+        at: &str,
+    ) -> Result<Option<Pagination>, SpecError> {
+        let Some(ext) = op.get("x-oryva-pagination") else {
+            return Ok(None);
+        };
+        let p_at = format!("{at}/x-oryva-pagination");
+        let Some(ext) = ext.as_object() else {
+            return invalid(&p_at, "expected a mapping");
+        };
+        let style = match ext.get("style") {
+            Some(Value::String(s)) => s.as_str(),
+            _ => {
+                return invalid(
+                    &format!("{p_at}/style"),
+                    "`style` is required: cursor, offset or page",
+                );
+            }
+        };
+        let query_param = |key: &str| -> Result<String, SpecError> {
+            let k_at = format!("{p_at}/{key}");
+            let Some(Value::String(name)) = ext.get(key) else {
+                return invalid(&k_at, format!("`{key}` is required and must be a string"));
+            };
+            if params
+                .iter()
+                .any(|p| &p.name == name && p.location == ParamLocation::Query)
+            {
+                Ok(name.clone())
+            } else {
+                invalid(
+                    &k_at,
+                    format!("this operation has no query parameter `{name}`"),
+                )
+            }
+        };
+        let ResponseBody::Json { ty } = response else {
+            return invalid(&p_at, "pagination needs a JSON 2xx response");
+        };
+        let path = |key: &str, nonempty: bool| -> Result<Vec<String>, SpecError> {
+            let k_at = format!("{p_at}/{key}");
+            let list: Option<Vec<String>> = ext
+                .get(key)
+                .and_then(Value::as_array)
+                .and_then(|a| a.iter().map(|v| v.as_str().map(String::from)).collect());
+            match list {
+                Some(l) if !(nonempty && l.is_empty()) => Ok(l),
+                _ => invalid(&k_at, format!("`{key}` is required: a list of field names")),
+            }
+        };
+        let resolves = |key: &str, p: &[String]| {
+            self.follow(ty, p).ok_or_else(|| SpecError::Invalid {
+                at: format!("{p_at}/{key}"),
+                message: format!("{p:?} does not resolve to a field of the 2xx response"),
+            })
+        };
+        let items = |key: &str| -> Result<Vec<String>, SpecError> {
+            let p = path(key, false)?;
+            match resolves(key, &p)? {
+                TypeRef::Array { .. } => Ok(p),
+                _ => invalid(
+                    &format!("{p_at}/{key}"),
+                    format!("{p:?} is not an array in the 2xx response"),
+                ),
+            }
+        };
+        Ok(Some(match style {
+            "cursor" => {
+                let param = query_param("param")?;
+                let next_cursor = path("next_cursor", true)?;
+                resolves("next_cursor", &next_cursor)?;
+                Pagination::Cursor {
+                    param,
+                    next_cursor,
+                    items: items("items")?,
+                }
+            }
+            "offset" => Pagination::Offset {
+                offset_param: query_param("offset_param")?,
+                limit_param: query_param("limit_param")?,
+                items: items("items")?,
+            },
+            "page" => Pagination::Page {
+                page_param: query_param("page_param")?,
+                items: items("items")?,
+            },
+            other => {
+                return invalid(
+                    &format!("{p_at}/style"),
+                    format!("unknown style {other:?}; expected cursor, offset or page"),
+                );
+            }
+        }))
+    }
+
+    /// OpenAPI 3.1 `webhooks`: the JSON request body of each event's operation is the payload.
+    pub fn webhooks(&mut self) -> Result<Vec<Webhook>, SpecError> {
+        let root = self.root;
+        let mut out: Vec<Webhook> = Vec::new();
+        for (name, item) in root
+            .get("webhooks")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            let at = format!("#/webhooks/{}", esc(name));
+            let (item, at) = self.resolve(item, &at, "pathItems")?;
+            let Some((verb, op)) = VERBS
+                .iter()
+                .find_map(|(v, _)| item.get(*v).map(|op| (*v, op)))
+            else {
+                return invalid(&at, "a webhook needs an operation such as `post`");
+            };
+            let at = format!("{at}/{verb}");
+            let ident = name.to_snake_case();
+            if let Some(first) = out.iter().find(|w| w.ident == ident) {
+                return invalid(
+                    &at,
+                    format!("`{name}` and `{}` both become `{ident}`", first.name),
+                );
+            }
+            let (rb, rb_at) = match op.get("requestBody") {
+                Some(rb) => self.resolve(rb, &format!("{at}/requestBody"), "requestBodies")?,
+                None => return invalid(&at, "a webhook needs a JSON request body for its payload"),
+            };
+            let found = rb
+                .get("content")
+                .and_then(Value::as_object)
+                .and_then(|c| json_key(c).map(|k| (c, k)));
+            let Some((content, key)) = found else {
+                return invalid(&rb_at, "a webhook payload must be application/json");
+            };
+            let payload = self.media_type(
+                &content[key],
+                &rb_at,
+                key,
+                &format!("{}Webhook", pascal(&ident)),
+            )?;
+            out.push(Webhook {
+                description: string_at(op, "summary").or_else(|| string_at(op, "description")),
+                name: name.clone(),
+                ident,
+                payload,
+            });
+        }
+        Ok(out)
     }
 
     fn media_type(

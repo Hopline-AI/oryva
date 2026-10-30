@@ -3,13 +3,20 @@ source: crates/oryva-spec/tests/fixtures.rs
 expression: "parse(\"petstore-3.0.yaml\")"
 ---
 {
-  "ir_version": 1,
+  "ir_version": 2,
   "name": "swagger",
   "title": "Swagger Petstore",
   "version": "1.0.0",
   "description": null,
-  "base_url": "http://petstore.swagger.io/v1",
-  "auth": null,
+  "servers": [
+    {
+      "name": "petstore",
+      "url": "http://petstore.swagger.io/v1",
+      "description": null
+    }
+  ],
+  "auth": [],
+  "idempotency_header": null,
   "resources": [
     {
       "name": "pets",
@@ -30,7 +37,8 @@ expression: "parse(\"petstore-3.0.yaml\")"
               "ty": {
                 "kind": "integer"
               },
-              "description": "How many items to return at one time (max 100)"
+              "description": "How many items to return at one time (max 100)",
+              "default": null
             }
           ],
           "body": null,
@@ -41,6 +49,7 @@ expression: "parse(\"petstore-3.0.yaml\")"
               "name": "Pets"
             }
           },
+          "pagination": null,
           "errors": [],
           "deprecated": false,
           "agent": {
@@ -69,6 +78,7 @@ expression: "parse(\"petstore-3.0.yaml\")"
           "response": {
             "kind": "empty"
           },
+          "pagination": null,
           "errors": [],
           "deprecated": false,
           "agent": {
@@ -95,7 +105,8 @@ expression: "parse(\"petstore-3.0.yaml\")"
                 "kind": "string",
                 "format": null
               },
-              "description": "The id of the pet to retrieve"
+              "description": "The id of the pet to retrieve",
+              "default": null
             }
           ],
           "body": null,
@@ -106,6 +117,7 @@ expression: "parse(\"petstore-3.0.yaml\")"
               "name": "Pet"
             }
           },
+          "pagination": null,
           "errors": [],
           "deprecated": false,
           "agent": {
@@ -133,7 +145,8 @@ expression: "parse(\"petstore-3.0.yaml\")"
               "kind": "integer"
             },
             "required": true,
-            "description": null
+            "description": null,
+            "default": null
           },
           {
             "name": "message",
@@ -143,7 +156,8 @@ expression: "parse(\"petstore-3.0.yaml\")"
               "format": null
             },
             "required": true,
-            "description": null
+            "description": null,
+            "default": null
           }
         ]
       }
@@ -161,7 +175,8 @@ expression: "parse(\"petstore-3.0.yaml\")"
               "kind": "integer"
             },
             "required": true,
-            "description": null
+            "description": null,
+            "default": null
           },
           {
             "name": "name",
@@ -171,7 +186,8 @@ expression: "parse(\"petstore-3.0.yaml\")"
               "format": null
             },
             "required": true,
-            "description": null
+            "description": null,
+            "default": null
           },
           {
             "name": "tag",
@@ -181,7 +197,8 @@ expression: "parse(\"petstore-3.0.yaml\")"
               "format": null
             },
             "required": false,
-            "description": null
+            "description": null,
+            "default": null
           }
         ]
       }
@@ -200,5 +217,7 @@ expression: "parse(\"petstore-3.0.yaml\")"
         }
       }
     }
-  ]
+  ],
+  "webhooks": [],
+  "webhook_signing": null
 }

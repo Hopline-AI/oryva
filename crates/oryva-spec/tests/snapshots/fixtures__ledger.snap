@@ -1,0 +1,1853 @@
+---
+source: crates/oryva-spec/tests/fixtures.rs
+expression: "parse(\"ledger.yaml\")"
+---
+{
+  "ir_version": 2,
+  "name": "ledger",
+  "title": "Ledger API",
+  "version": "2026-10-01",
+  "description": "Customers, invoices, payments and refunds for small businesses.",
+  "servers": [
+    {
+      "name": "production",
+      "url": "https://api.ledger.example",
+      "description": "Live data."
+    },
+    {
+      "name": "sandbox",
+      "url": "https://sandbox.ledger.example",
+      "description": "Test data; no money moves."
+    }
+  ],
+  "auth": [
+    {
+      "kind": "bearer",
+      "env_var": "LEDGER_API_KEY"
+    },
+    {
+      "kind": "oauth2_client_credentials",
+      "token_url": "https://auth.ledger.example/oauth/token",
+      "scopes": [
+        "ledger.read",
+        "ledger.write"
+      ],
+      "client_id_env": "LEDGER_CLIENT_ID",
+      "client_secret_env": "LEDGER_CLIENT_SECRET"
+    }
+  ],
+  "idempotency_header": "Idempotency-Key",
+  "resources": [
+    {
+      "name": "customers",
+      "description": "People and companies you bill.",
+      "methods": [
+        {
+          "name": "list",
+          "http_method": "GET",
+          "path": "/customers",
+          "summary": "List customers, newest first.",
+          "description": null,
+          "params": [
+            {
+              "name": "limit",
+              "ident": "limit",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "integer"
+              },
+              "description": "Maximum items per page (at most 100).",
+              "default": 20
+            },
+            {
+              "name": "starting_after",
+              "ident": "starting_after",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": "Cursor from the previous page's `next_cursor`.",
+              "default": null
+            },
+            {
+              "name": "email",
+              "ident": "email",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": "Only customers with exactly this email.",
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "CustomersListResponse"
+            }
+          },
+          "pagination": {
+            "kind": "cursor",
+            "param": "starting_after",
+            "next_cursor": [
+              "next_cursor"
+            ],
+            "items": [
+              "data"
+            ]
+          },
+          "errors": [
+            {
+              "status": 429,
+              "description": "Too many requests; retry after the number of seconds in Retry-After.",
+              "ty": {
+                "kind": "named",
+                "name": "Error"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "create",
+          "http_method": "POST",
+          "path": "/customers",
+          "summary": "Create a customer.",
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "json",
+            "required": true,
+            "ty": {
+              "kind": "named",
+              "name": "CustomersCreateRequest"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Customer"
+            }
+          },
+          "pagination": null,
+          "errors": [
+            {
+              "status": 400,
+              "description": "The request was invalid; `error.param` names the field.",
+              "ty": {
+                "kind": "named",
+                "name": "Error"
+              }
+            },
+            {
+              "status": 409,
+              "description": "The idempotency key was reused with a different request body.",
+              "ty": {
+                "kind": "named",
+                "name": "Error"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "search",
+          "http_method": "GET",
+          "path": "/customers/search",
+          "summary": "Search customers by name.",
+          "description": "Use `customers.list` with `email` instead.",
+          "params": [
+            {
+              "name": "q",
+              "ident": "q",
+              "location": "query",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "array",
+              "items": {
+                "kind": "named",
+                "name": "Customer"
+              }
+            }
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": true,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "get",
+          "http_method": "GET",
+          "path": "/customers/{customer_id}",
+          "summary": "Fetch one customer.",
+          "description": null,
+          "params": [
+            {
+              "name": "customer_id",
+              "ident": "customer_id",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Customer"
+            }
+          },
+          "pagination": null,
+          "errors": [
+            {
+              "status": 404,
+              "description": "No object with that ID.",
+              "ty": {
+                "kind": "named",
+                "name": "Error"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "update",
+          "http_method": "PATCH",
+          "path": "/customers/{customer_id}",
+          "summary": "Change a customer's name, email or metadata.",
+          "description": null,
+          "params": [
+            {
+              "name": "customer_id",
+              "ident": "customer_id",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": {
+            "encoding": "json",
+            "required": true,
+            "ty": {
+              "kind": "named",
+              "name": "CustomersUpdateRequest"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Customer"
+            }
+          },
+          "pagination": null,
+          "errors": [
+            {
+              "status": 404,
+              "description": "No object with that ID.",
+              "ty": {
+                "kind": "named",
+                "name": "Error"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "delete",
+          "http_method": "DELETE",
+          "path": "/customers/{customer_id}",
+          "summary": "Delete a customer and all their unpaid invoices.",
+          "description": null,
+          "params": [
+            {
+              "name": "customer_id",
+              "ident": "customer_id",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "empty"
+          },
+          "pagination": null,
+          "errors": [
+            {
+              "status": 404,
+              "description": "No object with that ID.",
+              "ty": {
+                "kind": "named",
+                "name": "Error"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": true,
+            "idempotent": true,
+            "hint": "Permanent, and also deletes the customer's draft and open invoices. Fetch the customer first and confirm with the user.",
+            "examples": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "invoices",
+      "description": "Requests for payment.",
+      "methods": [
+        {
+          "name": "list",
+          "http_method": "GET",
+          "path": "/invoices",
+          "summary": "List invoices.",
+          "description": null,
+          "params": [
+            {
+              "name": "limit",
+              "ident": "limit",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "integer"
+              },
+              "description": "Maximum items per page (at most 100).",
+              "default": 20
+            },
+            {
+              "name": "offset",
+              "ident": "offset",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "integer"
+              },
+              "description": null,
+              "default": 0
+            },
+            {
+              "name": "status",
+              "ident": "status",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "enum",
+                "values": [
+                  "draft",
+                  "open",
+                  "paid",
+                  "void"
+                ]
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "InvoicesListResponse"
+            }
+          },
+          "pagination": {
+            "kind": "offset",
+            "offset_param": "offset",
+            "limit_param": "limit",
+            "items": [
+              "data"
+            ]
+          },
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "create",
+          "http_method": "POST",
+          "path": "/invoices",
+          "summary": "Create a draft invoice.",
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "json",
+            "required": true,
+            "ty": {
+              "kind": "named",
+              "name": "InvoicesCreateRequest"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Invoice"
+            }
+          },
+          "pagination": null,
+          "errors": [
+            {
+              "status": 400,
+              "description": "The request was invalid; `error.param` names the field.",
+              "ty": {
+                "kind": "named",
+                "name": "Error"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "get",
+          "http_method": "GET",
+          "path": "/invoices/{invoice_id}",
+          "summary": "Fetch one invoice.",
+          "description": null,
+          "params": [
+            {
+              "name": "invoice_id",
+              "ident": "invoice_id",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Invoice"
+            }
+          },
+          "pagination": null,
+          "errors": [
+            {
+              "status": 404,
+              "description": "No object with that ID.",
+              "ty": {
+                "kind": "named",
+                "name": "Error"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "finalize",
+          "http_method": "POST",
+          "path": "/invoices/{invoice_id}/finalize",
+          "summary": "Turn a draft invoice into an open one and email it to the customer.",
+          "description": null,
+          "params": [
+            {
+              "name": "invoice_id",
+              "ident": "invoice_id",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Invoice"
+            }
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": "Emails the customer immediately; this can't be undone.",
+            "examples": []
+          }
+        },
+        {
+          "name": "void",
+          "http_method": "POST",
+          "path": "/invoices/{invoice_id}/void",
+          "summary": "Void an open invoice so it can no longer be paid.",
+          "description": null,
+          "params": [
+            {
+              "name": "invoice_id",
+              "ident": "invoice_id",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Invoice"
+            }
+          },
+          "pagination": null,
+          "errors": [
+            {
+              "status": 409,
+              "description": "The invoice isn't open.",
+              "ty": {
+                "kind": "named",
+                "name": "Error"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": true,
+            "idempotent": true,
+            "hint": "Permanent. Only open invoices can be voided.",
+            "examples": []
+          }
+        },
+        {
+          "name": "download_pdf",
+          "http_method": "GET",
+          "path": "/invoices/{invoice_id}/pdf",
+          "summary": "Download the invoice as a PDF.",
+          "description": null,
+          "params": [
+            {
+              "name": "invoice_id",
+              "ident": "invoice_id",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "binary",
+            "content_type": "application/pdf"
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "payments",
+      "description": "Money received.",
+      "methods": [
+        {
+          "name": "list",
+          "http_method": "GET",
+          "path": "/payments",
+          "summary": "List payments.",
+          "description": null,
+          "params": [
+            {
+              "name": "page",
+              "ident": "page",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "integer"
+              },
+              "description": null,
+              "default": 1
+            },
+            {
+              "name": "invoice_id",
+              "ident": "invoice_id",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "PaymentsListResponse"
+            }
+          },
+          "pagination": {
+            "kind": "page",
+            "page_param": "page",
+            "items": [
+              "items"
+            ]
+          },
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "get",
+          "http_method": "GET",
+          "path": "/payments/{payment_id}",
+          "summary": "Fetch one payment.",
+          "description": null,
+          "params": [
+            {
+              "name": "payment_id",
+              "ident": "payment_id",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Payment"
+            }
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "refunds",
+      "description": "Money returned.",
+      "methods": [
+        {
+          "name": "create",
+          "http_method": "POST",
+          "path": "/refunds",
+          "summary": "Refund all or part of a payment.",
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "json",
+            "required": true,
+            "ty": {
+              "kind": "named",
+              "name": "RefundsCreateRequest"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Refund"
+            }
+          },
+          "pagination": null,
+          "errors": [
+            {
+              "status": 400,
+              "description": "The request was invalid; `error.param` names the field.",
+              "ty": {
+                "kind": "named",
+                "name": "Error"
+              }
+            },
+            {
+              "status": 409,
+              "description": "The idempotency key was reused with a different request body.",
+              "ty": {
+                "kind": "named",
+                "name": "Error"
+              }
+            }
+          ],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": true,
+            "idempotent": false,
+            "hint": "Moves money back to the customer and can't be reversed. Check the payment's amount first; a refund can't exceed what's left to refund.",
+            "examples": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "files",
+      "description": "Attachments such as receipts.",
+      "methods": [
+        {
+          "name": "upload",
+          "http_method": "POST",
+          "path": "/files",
+          "summary": "Upload a file, such as a receipt, as a multipart form.",
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "multipart",
+            "required": true,
+            "ty": {
+              "kind": "named",
+              "name": "FilesUploadRequest"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "File"
+            }
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "upload_raw",
+          "http_method": "POST",
+          "path": "/files/raw",
+          "summary": "Upload a file as the raw request body.",
+          "description": null,
+          "params": [
+            {
+              "name": "filename",
+              "ident": "filename",
+              "location": "query",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": {
+            "encoding": "binary",
+            "required": true,
+            "ty": {
+              "kind": "file"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "File"
+            }
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "events",
+      "description": "A live feed of account activity.",
+      "methods": [
+        {
+          "name": "stream",
+          "http_method": "GET",
+          "path": "/events/stream",
+          "summary": "Stream account events as they happen.",
+          "description": null,
+          "params": [],
+          "body": null,
+          "response": {
+            "kind": "event_stream",
+            "event": {
+              "kind": "named",
+              "name": "Event"
+            }
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": "Long-lived. Read a few events and stop; don't wait for the stream to end.",
+            "examples": []
+          }
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "Currency",
+      "description": "ISO 4217 currency code, lowercase.",
+      "shape": {
+        "kind": "enum",
+        "values": [
+          "usd",
+          "eur",
+          "gbp",
+          "inr"
+        ]
+      }
+    },
+    {
+      "name": "Customer",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "id",
+            "ident": "id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "name",
+            "ident": "name",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "email",
+            "ident": "email",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": "email"
+              }
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "metadata",
+            "ident": "metadata",
+            "ty": {
+              "kind": "map",
+              "values": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": false,
+            "description": "Your own key-value pairs.",
+            "default": null
+          },
+          {
+            "name": "created_at",
+            "ident": "created_at",
+            "ty": {
+              "kind": "string",
+              "format": "date-time"
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "CustomersCreateRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "name",
+            "ident": "name",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "email",
+            "ident": "email",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": "email"
+              }
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "metadata",
+            "ident": "metadata",
+            "ty": {
+              "kind": "map",
+              "values": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "CustomersListResponse",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "data",
+            "ident": "data",
+            "ty": {
+              "kind": "array",
+              "items": {
+                "kind": "named",
+                "name": "Customer"
+              }
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "next_cursor",
+            "ident": "next_cursor",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "CustomersUpdateRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "name",
+            "ident": "name",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "email",
+            "ident": "email",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": "email"
+              }
+            },
+            "required": false,
+            "description": "Send null to remove the email.",
+            "default": null
+          },
+          {
+            "name": "metadata",
+            "ident": "metadata",
+            "ty": {
+              "kind": "map",
+              "values": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "Error",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "error",
+            "ident": "error",
+            "ty": {
+              "kind": "named",
+              "name": "ErrorError"
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "ErrorError",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "code",
+            "ident": "code",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "message",
+            "ident": "message",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "param",
+            "ident": "param",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": false,
+            "description": "The request field the error is about, if any.",
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "Event",
+      "description": null,
+      "shape": {
+        "kind": "union",
+        "variants": [
+          {
+            "kind": "named",
+            "name": "InvoicePaidEvent"
+          },
+          {
+            "kind": "named",
+            "name": "PaymentFailedEvent"
+          }
+        ],
+        "discriminator": {
+          "property": "type",
+          "mapping": [
+            {
+              "value": "invoice.paid",
+              "type_name": "InvoicePaidEvent"
+            },
+            {
+              "value": "payment.failed",
+              "type_name": "PaymentFailedEvent"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "File",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "id",
+            "ident": "id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "filename",
+            "ident": "filename",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "size_bytes",
+            "ident": "size_bytes",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "FilesUploadRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "file",
+            "ident": "file",
+            "ty": {
+              "kind": "file"
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "purpose",
+            "ident": "purpose",
+            "ty": {
+              "kind": "enum",
+              "values": [
+                "receipt",
+                "contract"
+              ]
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "Invoice",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "id",
+            "ident": "id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "customer_id",
+            "ident": "customer_id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "status",
+            "ident": "status",
+            "ty": {
+              "kind": "enum",
+              "values": [
+                "draft",
+                "open",
+                "paid",
+                "void"
+              ]
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "currency",
+            "ident": "currency",
+            "ty": {
+              "kind": "named",
+              "name": "Currency"
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "line_items",
+            "ident": "line_items",
+            "ty": {
+              "kind": "array",
+              "items": {
+                "kind": "named",
+                "name": "LineItem"
+              }
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "total",
+            "ident": "total",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "reminder_level",
+            "ident": "reminder_level",
+            "ty": {
+              "kind": "enum",
+              "values": [
+                0,
+                1,
+                2
+              ]
+            },
+            "required": false,
+            "description": "How many payment reminders have been sent.",
+            "default": null
+          },
+          {
+            "name": "due_date",
+            "ident": "due_date",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": "date"
+              }
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "InvoicePaidEvent",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "type",
+            "ident": "type",
+            "ty": {
+              "kind": "enum",
+              "values": [
+                "invoice.paid"
+              ]
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "invoice",
+            "ident": "invoice",
+            "ty": {
+              "kind": "named",
+              "name": "Invoice"
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "InvoicesCreateRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "customer_id",
+            "ident": "customer_id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "currency",
+            "ident": "currency",
+            "ty": {
+              "kind": "named",
+              "name": "Currency"
+            },
+            "required": false,
+            "description": null,
+            "default": "usd"
+          },
+          {
+            "name": "line_items",
+            "ident": "line_items",
+            "ty": {
+              "kind": "array",
+              "items": {
+                "kind": "named",
+                "name": "LineItem"
+              }
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "due_date",
+            "ident": "due_date",
+            "ty": {
+              "kind": "string",
+              "format": "date"
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "InvoicesListResponse",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "data",
+            "ident": "data",
+            "ty": {
+              "kind": "array",
+              "items": {
+                "kind": "named",
+                "name": "Invoice"
+              }
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "total",
+            "ident": "total",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "LineItem",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "description",
+            "ident": "description",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "amount",
+            "ident": "amount",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": true,
+            "description": "Amount in the currency's smallest unit, e.g. cents.",
+            "default": null
+          },
+          {
+            "name": "quantity",
+            "ident": "quantity",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": false,
+            "description": null,
+            "default": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "Payment",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "id",
+            "ident": "id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "invoice_id",
+            "ident": "invoice_id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "amount",
+            "ident": "amount",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "status",
+            "ident": "status",
+            "ty": {
+              "kind": "enum",
+              "values": [
+                "pending",
+                "succeeded",
+                "failed"
+              ]
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "failure_reason",
+            "ident": "failure_reason",
+            "ty": {
+              "kind": "nullable",
+              "inner": {
+                "kind": "string",
+                "format": null
+              }
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "PaymentFailedEvent",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "type",
+            "ident": "type",
+            "ty": {
+              "kind": "enum",
+              "values": [
+                "payment.failed"
+              ]
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "payment",
+            "ident": "payment",
+            "ty": {
+              "kind": "named",
+              "name": "Payment"
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "PaymentsListResponse",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "items",
+            "ident": "items",
+            "ty": {
+              "kind": "array",
+              "items": {
+                "kind": "named",
+                "name": "Payment"
+              }
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "total_pages",
+            "ident": "total_pages",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "Refund",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "id",
+            "ident": "id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "payment_id",
+            "ident": "payment_id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "amount",
+            "ident": "amount",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "reason",
+            "ident": "reason",
+            "ty": {
+              "kind": "enum",
+              "values": [
+                "duplicate",
+                "fraudulent",
+                "requested_by_customer"
+              ]
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "RefundsCreateRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "payment_id",
+            "ident": "payment_id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "amount",
+            "ident": "amount",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": false,
+            "description": "Smallest currency unit. Omit to refund the full remaining amount.",
+            "default": null
+          },
+          {
+            "name": "reason",
+            "ident": "reason",
+            "ty": {
+              "kind": "enum",
+              "values": [
+                "duplicate",
+                "fraudulent",
+                "requested_by_customer"
+              ]
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    }
+  ],
+  "webhooks": [
+    {
+      "name": "invoice.paid",
+      "ident": "invoice_paid",
+      "description": "An invoice was paid in full.",
+      "payload": {
+        "kind": "named",
+        "name": "InvoicePaidEvent"
+      }
+    },
+    {
+      "name": "payment.failed",
+      "ident": "payment_failed",
+      "description": "A payment attempt failed.",
+      "payload": {
+        "kind": "named",
+        "name": "PaymentFailedEvent"
+      }
+    }
+  ],
+  "webhook_signing": {
+    "kind": "standard_webhooks",
+    "secret_env": "LEDGER_WEBHOOK_SECRET"
+  }
+}

@@ -9,8 +9,8 @@ mod schema;
 mod tests;
 
 use heck::{ToShoutySnakeCase, ToSnakeCase};
-use oryva_ir::{Api, Auth, IR_VERSION};
-use schema::{Ctx, esc};
+use oryva_ir::{Api, ApiKeyLocation, Auth, IR_VERSION, Server, WebhookSigning};
+use schema::{Ctx, esc, string_at};
 use serde_json::Value;
 use std::path::Path;
 
@@ -96,6 +96,27 @@ fn convert(doc: &Value) -> Result<Api, SpecError> {
     let mut cx = Ctx::new(doc);
     cx.components()?;
     let resources = cx.operations()?;
+    let webhooks = cx.webhooks()?;
+    let upper = name.to_shouty_snake_case();
+    let idempotency_header = match info.get("x-oryva-idempotency-header") {
+        None => None,
+        Some(Value::String(h)) => Some(h.clone()),
+        Some(_) => return invalid("#/info/x-oryva-idempotency-header", "expected a string"),
+    };
+    let webhook_signing = match info.get("x-oryva-webhook-signing") {
+        None => None,
+        Some(Value::String(s)) if s == "standard-webhooks" => {
+            Some(WebhookSigning::StandardWebhooks {
+                secret_env: format!("{upper}_WEBHOOK_SECRET"),
+            })
+        }
+        Some(other) => {
+            return invalid(
+                "#/info/x-oryva-webhook-signing",
+                format!("unsupported value {other}; expected `standard-webhooks`"),
+            );
+        }
+    };
     Ok(Api {
         ir_version: IR_VERSION,
         auth: auth(doc, &name)?,
@@ -105,10 +126,10 @@ fn convert(doc: &Value) -> Result<Api, SpecError> {
             .get("description")
             .and_then(Value::as_str)
             .map(String::from),
-        base_url: doc
-            .pointer("/servers/0/url")
-            .and_then(Value::as_str)
-            .map(String::from),
+        servers: servers(doc)?,
+        idempotency_header,
+        webhooks,
+        webhook_signing,
         resources,
         types: cx.types.into_values().collect(),
         name,
@@ -122,43 +143,167 @@ fn required_str(v: &Value, key: &str, at: &str) -> Result<String, SpecError> {
     }
 }
 
-/// The scheme named by top-level `security`, else the only scheme defined.
-fn auth(doc: &Value, name: &str) -> Result<Option<Auth>, SpecError> {
+/// Every `servers` entry, named by `x-oryva-name`, else the first label of its host, else
+/// `environment_<n>` (also on a name collision). Variables are replaced by their defaults.
+fn servers(doc: &Value) -> Result<Vec<Server>, SpecError> {
+    let mut out: Vec<Server> = Vec::new();
+    for (i, s) in doc
+        .get("servers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        let at = format!("#/servers/{i}");
+        let mut url = required_str(s, "url", &format!("{at}/url"))?;
+        for (var, def) in s
+            .get("variables")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(d) = string_at(def, "default") {
+                url = url.replace(&format!("{{{var}}}"), &d);
+            }
+        }
+        let named = match s.get("x-oryva-name") {
+            None => None,
+            Some(Value::String(n)) => Some(n.to_snake_case()),
+            Some(_) => return invalid(&format!("{at}/x-oryva-name"), "expected a string"),
+        };
+        let from_host = || {
+            let host = url.split_once("://").map_or("", |(_, rest)| rest);
+            let host = host.split(['/', '?', '#', ':']).next().unwrap_or("");
+            host.split('.').next().unwrap_or("").to_snake_case()
+        };
+        let mut name = named.unwrap_or_else(from_host);
+        if name.is_empty()
+            || name.starts_with(|c: char| c.is_ascii_digit())
+            || out.iter().any(|o| o.name == name)
+        {
+            name = format!("environment_{}", i + 1);
+        }
+        out.push(Server {
+            name,
+            url,
+            description: string_at(s, "description"),
+        });
+    }
+    Ok(out)
+}
+
+/// Every scheme named by top-level `security`, in order, else the only scheme defined. Each
+/// requirement is an alternative; one that combines schemes is an error.
+fn auth(doc: &Value, name: &str) -> Result<Vec<Auth>, SpecError> {
     let schemes = doc
         .pointer("/components/securitySchemes")
         .and_then(Value::as_object);
-    let key = match doc.get("security").and_then(Value::as_array) {
-        Some(reqs) => reqs
-            .iter()
-            .find_map(|r| r.as_object()?.keys().next().map(String::as_str)),
-        None => schemes
-            .filter(|s| s.len() == 1)
-            .and_then(|s| s.keys().next().map(String::as_str)),
-    };
-    let Some(key) = key else { return Ok(None) };
-    let at = format!("#/components/securitySchemes/{}", esc(key));
-    let Some(scheme) = schemes.and_then(|s| s.get(key)) else {
-        return invalid(&at, "`security` names a scheme that is not defined here");
-    };
-    let env_var = format!("{}_API_KEY", name.to_shouty_snake_case());
-    let text = |k: &str| scheme.get(k).and_then(Value::as_str).unwrap_or("");
-    match text("type") {
-        "apiKey" if text("in") == "header" => Ok(Some(Auth::ApiKey {
-            header: text("name").to_string(),
-            env_var,
-        })),
-        "apiKey" => invalid(
-            &at,
-            "only apiKey schemes sent in a header are supported; the IR cannot express query or cookie keys",
-        ),
-        "http" if text("scheme").eq_ignore_ascii_case("bearer") => {
-            Ok(Some(Auth::Bearer { env_var }))
+    let mut wanted: Vec<(&str, Vec<String>)> = Vec::new();
+    match doc.get("security").and_then(Value::as_array) {
+        Some(reqs) => {
+            for (i, req) in reqs.iter().enumerate() {
+                let at = format!("#/security/{i}");
+                let Some(req) = req.as_object() else {
+                    return invalid(&at, "expected a mapping of scheme name to scopes");
+                };
+                if req.len() > 1 {
+                    let keys: Vec<&String> = req.keys().collect();
+                    return invalid(
+                        &at,
+                        format!(
+                            "requirements that combine schemes ({keys:?}) are not supported; list each scheme as its own alternative"
+                        ),
+                    );
+                }
+                if let Some((key, scopes)) = req.iter().next()
+                    && !wanted.iter().any(|(k, _)| k == key)
+                {
+                    let scopes = scopes.as_array().into_iter().flatten();
+                    let scopes = scopes.filter_map(|v| v.as_str().map(String::from));
+                    wanted.push((key, scopes.collect()));
+                }
+            }
         }
-        "oauth2" | "openIdConnect" => Ok(Some(Auth::Bearer { env_var })),
+        None => {
+            if let Some(only) = schemes
+                .filter(|s| s.len() == 1)
+                .and_then(|s| s.keys().next())
+            {
+                wanted.push((only, vec![]));
+            }
+        }
+    }
+    let upper = name.to_shouty_snake_case();
+    let mut out = Vec::new();
+    for (key, scopes) in wanted {
+        let at = format!("#/components/securitySchemes/{}", esc(key));
+        let Some(scheme) = schemes.and_then(|s| s.get(key)) else {
+            return invalid(&at, "`security` names a scheme that is not defined here");
+        };
+        out.push(scheme_auth(scheme, scopes, &upper, &at)?);
+    }
+    Ok(out)
+}
+
+fn scheme_auth(
+    scheme: &Value,
+    scopes: Vec<String>,
+    upper: &str,
+    at: &str,
+) -> Result<Auth, SpecError> {
+    let text = |k: &str| scheme.get(k).and_then(Value::as_str).unwrap_or("");
+    let env_var = format!("{upper}_API_KEY");
+    match text("type") {
+        "apiKey" => {
+            let location = match text("in") {
+                "header" => ApiKeyLocation::Header,
+                "query" => ApiKeyLocation::Query,
+                "cookie" => ApiKeyLocation::Cookie,
+                other => {
+                    return invalid(
+                        at,
+                        format!("apiKey `in` must be header, query or cookie, found {other:?}"),
+                    );
+                }
+            };
+            Ok(Auth::ApiKey {
+                location,
+                name: text("name").to_string(),
+                env_var,
+            })
+        }
+        "http" if text("scheme").eq_ignore_ascii_case("bearer") => Ok(Auth::Bearer { env_var }),
+        "http" if text("scheme").eq_ignore_ascii_case("basic") => Ok(Auth::Basic {
+            username_env: format!("{upper}_USERNAME"),
+            password_env: format!("{upper}_PASSWORD"),
+        }),
+        "oauth2" => match scheme.pointer("/flows/clientCredentials") {
+            Some(flow) => {
+                let flow_at = format!("{at}/flows/clientCredentials");
+                let Some(token_url) = string_at(flow, "tokenUrl") else {
+                    return invalid(&format!("{flow_at}/tokenUrl"), "`tokenUrl` is required");
+                };
+                let scopes = if scopes.is_empty() {
+                    let all = flow.get("scopes").and_then(Value::as_object);
+                    all.into_iter().flat_map(|m| m.keys().cloned()).collect()
+                } else {
+                    scopes
+                };
+                Ok(Auth::OAuth2ClientCredentials {
+                    token_url,
+                    scopes,
+                    client_id_env: format!("{upper}_CLIENT_ID"),
+                    client_secret_env: format!("{upper}_CLIENT_SECRET"),
+                })
+            }
+            // The caller brings a token.
+            None => Ok(Auth::Bearer { env_var }),
+        },
+        "openIdConnect" => Ok(Auth::Bearer { env_var }),
         other => invalid(
-            &at,
+            at,
             format!(
-                "unsupported security scheme ({other} {}); use apiKey in a header or http bearer",
+                "unsupported security scheme ({other} {}); use apiKey, http bearer or basic, oauth2 or openIdConnect",
                 text("scheme")
             ),
         ),
