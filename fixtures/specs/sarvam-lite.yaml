@@ -1,0 +1,335 @@
+# Hand-written approximation of a few Sarvam AI endpoints, used only as a test fixture.
+# This is NOT Sarvam's official spec: endpoints and field names may differ from the real API.
+# It deliberately covers: OpenAPI 3.1 nullable type arrays, inline objects, named and inline
+# enums, oneOf, JSON + multipart bodies, binary-ish payloads, path/query params, error
+# responses, DELETE, and the x-oryva-* extensions.
+openapi: 3.1.0
+info:
+  title: Sarvam API (lite fixture)
+  version: "1.0"
+  x-oryva-name: sarvam
+  description: Speech, text and translation models for Indian languages.
+servers:
+  - url: https://api.sarvam.ai
+security:
+  - apiKey: []
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: api-subscription-key
+  schemas:
+    LanguageCode:
+      type: string
+      description: BCP-47 code of an Indian language or English.
+      enum: [en-IN, hi-IN, bn-IN, ta-IN, te-IN, kn-IN, ml-IN, mr-IN, gu-IN, pa-IN, od-IN]
+    TranslateRequest:
+      type: object
+      required: [input, source_language_code, target_language_code]
+      properties:
+        input:
+          type: string
+          description: Text to translate. At most 2000 characters.
+        source_language_code:
+          description: Source language, or `auto` to detect it.
+          oneOf:
+            - $ref: "#/components/schemas/LanguageCode"
+            - type: string
+              enum: [auto]
+        target_language_code:
+          $ref: "#/components/schemas/LanguageCode"
+        mode:
+          type: string
+          enum: [formal, modern-colloquial, classic-colloquial, code-mixed]
+          default: formal
+    TranslateResponse:
+      type: object
+      required: [translated_text, source_language_code]
+      properties:
+        request_id:
+          type: [string, "null"]
+        translated_text:
+          type: string
+        source_language_code:
+          type: string
+          description: The detected language when the request used `auto`.
+    Pronunciation:
+      type: object
+      required: [id, word, pronunciation]
+      properties:
+        id:
+          type: string
+        word:
+          type: string
+        pronunciation:
+          type: string
+          description: Phonetic spelling the speech models should use.
+        created_at:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [message, code]
+          properties:
+            message:
+              type: string
+            code:
+              type: string
+            request_id:
+              type: [string, "null"]
+  responses:
+    BadRequest:
+      description: The request was invalid. The message names the offending field.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    RateLimited:
+      description: Too many requests. Retry after the number of seconds in Retry-After.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+paths:
+  /translate:
+    post:
+      tags: [text]
+      operationId: translate
+      summary: Translate text between Indian languages and English.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranslateRequest"
+      responses:
+        "200":
+          description: Translated text.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranslateResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /transliterate:
+    post:
+      tags: [text]
+      operationId: transliterate
+      summary: Convert text between scripts without translating it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input, source_language_code, target_language_code]
+              properties:
+                input:
+                  type: string
+                source_language_code:
+                  $ref: "#/components/schemas/LanguageCode"
+                target_language_code:
+                  $ref: "#/components/schemas/LanguageCode"
+      responses:
+        "200":
+          description: Transliterated text.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [transliterated_text]
+                properties:
+                  transliterated_text:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /text-lid:
+    post:
+      tags: [text]
+      operationId: text_identify_language
+      summary: Identify the language and script of a piece of text.
+      x-oryva-agent:
+        read_only: true
+        idempotent: true
+        hint: Call this before translate only when you need the language code itself; translate already accepts `auto`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input]
+              properties:
+                input:
+                  type: string
+      responses:
+        "200":
+          description: The detected language.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  language_code:
+                    type: [string, "null"]
+                  script_code:
+                    type: [string, "null"]
+  /text-to-speech:
+    post:
+      tags: [text_to_speech]
+      operationId: convert
+      summary: Synthesize speech from text.
+      x-oryva-agent:
+        hint: Returns base64-encoded WAV audio in `audios`. Save it to a file rather than reading it back. At most 1500 characters of text per call.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, target_language_code]
+              properties:
+                text:
+                  type: string
+                target_language_code:
+                  $ref: "#/components/schemas/LanguageCode"
+                speaker:
+                  type: string
+                  enum: [anushka, abhilash, manisha, vidya, arya, karun, hitesh]
+                pace:
+                  type: number
+                  description: Speaking rate from 0.5 to 2.0.
+      responses:
+        "200":
+          description: Synthesized audio.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [audios]
+                properties:
+                  request_id:
+                    type: [string, "null"]
+                  audios:
+                    type: array
+                    items:
+                      type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /speech-to-text:
+    post:
+      tags: [speech_to_text]
+      operationId: transcribe
+      summary: Transcribe an audio file.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: WAV or MP3 audio, at most 30 seconds.
+                language_code:
+                  description: Spoken language, or `unknown` to detect it.
+                  type: string
+      responses:
+        "200":
+          description: The transcript.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [transcript]
+                properties:
+                  transcript:
+                    type: string
+                  language_code:
+                    type: [string, "null"]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /pronunciations:
+    get:
+      tags: [pronunciations]
+      operationId: list
+      summary: List custom pronunciations.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 100
+          description: Maximum number of entries to return (at most 100).
+      responses:
+        "200":
+          description: A page of pronunciations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pronunciation"
+    post:
+      tags: [pronunciations]
+      operationId: create
+      summary: Add a custom pronunciation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [word, pronunciation]
+              properties:
+                word:
+                  type: string
+                pronunciation:
+                  type: string
+      responses:
+        "201":
+          description: The new pronunciation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pronunciation"
+  /pronunciations/{pronunciation_id}:
+    parameters:
+      - name: pronunciation_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [pronunciations]
+      operationId: get
+      summary: Fetch one custom pronunciation.
+      responses:
+        "200":
+          description: The pronunciation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pronunciation"
+        "404":
+          description: No pronunciation with that ID.
+    delete:
+      tags: [pronunciations]
+      operationId: delete
+      summary: Delete a custom pronunciation.
+      x-oryva-agent:
+        hint: Permanent. Confirm the ID with `pronunciations_get` first.
+      responses:
+        "204":
+          description: Deleted.
+        "404":
+          description: No pronunciation with that ID.
