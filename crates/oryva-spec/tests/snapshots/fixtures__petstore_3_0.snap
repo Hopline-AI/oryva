@@ -1,0 +1,204 @@
+---
+source: crates/oryva-spec/tests/fixtures.rs
+expression: "parse(\"petstore-3.0.yaml\")"
+---
+{
+  "ir_version": 1,
+  "name": "swagger",
+  "title": "Swagger Petstore",
+  "version": "1.0.0",
+  "description": null,
+  "base_url": "http://petstore.swagger.io/v1",
+  "auth": null,
+  "resources": [
+    {
+      "name": "pets",
+      "description": null,
+      "methods": [
+        {
+          "name": "list_pets",
+          "http_method": "GET",
+          "path": "/pets",
+          "summary": "List all pets",
+          "description": null,
+          "params": [
+            {
+              "name": "limit",
+              "ident": "limit",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "integer"
+              },
+              "description": "How many items to return at one time (max 100)"
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Pets"
+            }
+          },
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "create_pets",
+          "http_method": "POST",
+          "path": "/pets",
+          "summary": "Create a pet",
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "json",
+            "required": true,
+            "ty": {
+              "kind": "named",
+              "name": "Pet"
+            }
+          },
+          "response": {
+            "kind": "empty"
+          },
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "show_pet_by_id",
+          "http_method": "GET",
+          "path": "/pets/{petId}",
+          "summary": "Info for a specific pet",
+          "description": null,
+          "params": [
+            {
+              "name": "petId",
+              "ident": "pet_id",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": "The id of the pet to retrieve"
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Pet"
+            }
+          },
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "Error",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "code",
+            "ident": "code",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "message",
+            "ident": "message",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "Pet",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "id",
+            "ident": "id",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "name",
+            "ident": "name",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null
+          },
+          {
+            "name": "tag",
+            "ident": "tag",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "Pets",
+      "description": null,
+      "shape": {
+        "kind": "alias",
+        "target": {
+          "kind": "array",
+          "items": {
+            "kind": "named",
+            "name": "Pet"
+          }
+        }
+      }
+    }
+  ]
+}

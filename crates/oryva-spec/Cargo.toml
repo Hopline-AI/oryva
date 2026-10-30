@@ -1,0 +1,15 @@
+[package]
+name = "oryva-spec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+oryva-ir.workspace = true
+serde_json.workspace = true
+heck = "0.5"
+serde-saphyr = "2"
+thiserror = "2"
+
+[dev-dependencies]
+insta.workspace = true
