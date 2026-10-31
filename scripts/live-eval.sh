@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# Live agent run against a generated MCP server. Generates the ledger SDK and server from the IR
-# fixture, installs the result, serves canned responses from scripts/stub_ledger.py, and runs
-# fixtures/evals/ledger.yaml with Claude. Costs real tokens: needs ANTHROPIC_API_KEY, read from
-# .env when present. Usage: scripts/live-eval.sh [report.json]
-# Until the spec parser lands this generates from the IR fixture; the main agent switches it to
-# `oryva generate fixtures/specs/ledger.yaml` at merge.
+# Live agent run against a generated MCP server. Generates the ledger SDK and MCP server from
+# fixtures/specs/ledger.yaml, installs them, serves canned responses from scripts/stub_ledger.py,
+# and runs fixtures/evals/ledger.yaml with Claude. Costs real tokens: needs ANTHROPIC_API_KEY, read
+# from .env when present. Usage: scripts/live-eval.sh [report.json]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -f .env ] && { set -a; . ./.env; set +a; }
@@ -14,10 +12,9 @@ stub=""
 trap 'kill "$stub" 2>/dev/null; wait "$stub" 2>/dev/null || true; rm -rf "$tmp"' EXIT
 
 cargo build -q -p oryva
-cargo run -q -p oryva-emit-python --example generate -- \
-  crates/oryva-emit-python/tests/fixtures/ledger.ir.json "$tmp/out"
+target/debug/oryva generate fixtures/specs/ledger.yaml --out "$tmp/out" >/dev/null
 uv venv -q --python 3.12 "$tmp/venv"
-uv pip install -q --python "$tmp/venv/bin/python" "$tmp/out/sdk" "$tmp/out/mcp"
+uv pip install -q --python "$tmp/venv/bin/python" "$tmp/out/python" "$tmp/out/mcp"
 
 python3 -I scripts/stub_ledger.py > "$tmp/port" &
 stub=$!

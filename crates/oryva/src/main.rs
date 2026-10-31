@@ -1,14 +1,14 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use oryva_emit_python::{Options, emit_mcp, emit_sdk};
 use oryva_eval::{HttpModel, TaskFile, lint, run};
 use serde_json::json;
 
 const USAGE: &str = "\
 usage:
   oryva generate <spec.yaml|spec.json> [--out <dir>]
-      Write a Python SDK to <dir>/sdk and an MCP server to <dir>/mcp.
+      Write a Python SDK to <dir>/python, its MCP server to <dir>/mcp and a
+      TypeScript SDK to <dir>/typescript.
       <dir> defaults to out/<api name>.
   oryva eval <tasks.yaml> [--lint-only] [--json <file>]
       Lint the MCP server's tools, then run the tasks with Claude.
@@ -53,17 +53,32 @@ fn generate(args: &[String]) -> Result<()> {
     }
     let api = oryva_spec::parse_file(Path::new(spec.ok_or(USAGE)?))?;
     let out = out.unwrap_or_else(|| Path::new("out").join(&api.name));
-    let opts = Options::for_api(&api);
-    let (sdk_dir, mcp_dir) = (out.join("sdk"), out.join("mcp"));
-    let sdk = emit_sdk(&api, &opts, &sdk_dir)?;
-    let mcp = emit_mcp(&api, &opts, &mcp_dir)?;
-    println!(
-        "wrote {} SDK files to {} and {} MCP server files to {}",
-        sdk.len(),
-        sdk_dir.display(),
-        mcp.len(),
-        mcp_dir.display()
-    );
+    let py = oryva_emit_python::Options::for_api(&api);
+    let ts = oryva_emit_typescript::Options::for_api(&api);
+    let written = [
+        (
+            "Python SDK",
+            "python",
+            oryva_emit_python::emit_sdk(&api, &py, &out.join("python"))?,
+        ),
+        (
+            "MCP server",
+            "mcp",
+            oryva_emit_python::emit_mcp(&api, &py, &out.join("mcp"))?,
+        ),
+        (
+            "TypeScript SDK",
+            "typescript",
+            oryva_emit_typescript::emit_sdk(&api, &ts, &out.join("typescript"))?,
+        ),
+    ];
+    for (what, dir, files) in written {
+        println!(
+            "{what}: {} files in {}",
+            files.len(),
+            out.join(dir).display()
+        );
+    }
     Ok(())
 }
 
