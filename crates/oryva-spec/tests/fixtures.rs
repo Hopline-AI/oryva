@@ -14,3 +14,8 @@ fn ledger() {
 fn petstore_3_0() {
     insta::assert_json_snapshot!(parse("petstore-3.0.yaml"));
 }
+
+#[test]
+fn edge_cases() {
+    insta::assert_json_snapshot!(parse("edge-cases.yaml"));
+}

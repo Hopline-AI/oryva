@@ -57,6 +57,8 @@ pub fn parse_str(src: &str) -> Result<Api, SpecError> {
         // Strict booleans: `no` (Norwegian) and `on` are strings in OpenAPI, not YAML 1.1 bools.
         let mut options = serde_saphyr::Options::default();
         options.strict_booleans = true;
+        // Specs are the user's own input; real ones run to 11 MB, past the default budget.
+        options.budget = None;
         serde_saphyr::from_str_with_options(src, options).map_err(|e| SpecError::Syntax {
             format: "YAML",
             message: e.to_string(),

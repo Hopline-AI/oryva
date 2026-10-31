@@ -14,6 +14,8 @@ pub(crate) struct Ctx<'a> {
     /// Names of component schemas that accept null; every reference to one is wrapped in
     /// `Nullable`.
     nullable: HashSet<String>,
+    /// Names of every component schema, so a hoisted inline object never takes one.
+    reserved: HashSet<String>,
 }
 
 /// What a schema is before it is given a name.
@@ -86,6 +88,7 @@ impl<'a> Ctx<'a> {
             root,
             types: BTreeMap::new(),
             nullable: HashSet::new(),
+            reserved: HashSet::new(),
         }
     }
 
@@ -148,6 +151,7 @@ impl<'a> Ctx<'a> {
         else {
             return Ok(());
         };
+        self.reserved = schemas.keys().map(|k| pascal(k)).collect();
         self.nullable = schemas
             .iter()
             .filter(|(_, s)| accepts_null(s))
@@ -214,8 +218,19 @@ impl<'a> Ctx<'a> {
     ) -> Result<TypeRef, SpecError> {
         let t = match node {
             Node::Object(fields) => {
-                self.add(hint, s, Shape::Object { fields }, at)?;
-                TypeRef::Named { name: hint.into() }
+                // `Foo`, then `Foo2`, `Foo3`, ... when a component or earlier hoist has the name.
+                let name = (1..)
+                    .map(|n| {
+                        if n == 1 {
+                            hint.to_string()
+                        } else {
+                            format!("{hint}{n}")
+                        }
+                    })
+                    .find(|c| !self.reserved.contains(c) && !self.types.contains_key(c))
+                    .expect("an unbounded range yields a free name");
+                self.add(&name, s, Shape::Object { fields }, at)?;
+                TypeRef::Named { name }
             }
             Node::Enum(values) => TypeRef::Enum { values },
             Node::Union(variants, _) => TypeRef::Union { variants },

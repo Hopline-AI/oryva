@@ -197,6 +197,7 @@ impl<'a> Ctx<'a> {
         let binary = |c: &'a Map<String, Value>| {
             c.iter()
                 .find(|(k, m)| *k == "application/octet-stream" || is_binary(m.get("schema")))
+                .or_else(|| c.iter().next())
                 .map(|(k, _)| (k, BodyEncoding::Binary))
         };
         let found = content.and_then(|c| {
@@ -221,9 +222,7 @@ impl<'a> Ctx<'a> {
                 .collect();
             return invalid(
                 &rb_at,
-                format!(
-                    "request body must offer application/json, multipart/form-data, application/x-www-form-urlencoded or a binary type; found {offered:?}"
-                ),
+                format!("request body must declare at least one content type; found {offered:?}"),
             );
         };
         let ty = match content[key].get("schema") {
@@ -235,8 +234,17 @@ impl<'a> Ctx<'a> {
             )?,
             None => TypeRef::Any,
         };
+        let content_type = (encoding == BodyEncoding::Binary).then(|| {
+            // A wildcard range is not a type a client can send.
+            if key.contains('*') {
+                "application/octet-stream".to_string()
+            } else {
+                key.clone()
+            }
+        });
         Ok(Some(Body {
             encoding,
+            content_type,
             required: rb.get("required").and_then(Value::as_bool).unwrap_or(false),
             ty,
         }))

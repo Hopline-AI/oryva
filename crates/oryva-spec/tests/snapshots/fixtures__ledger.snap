@@ -3,7 +3,7 @@ source: crates/oryva-spec/tests/fixtures.rs
 expression: "parse(\"ledger.yaml\")"
 ---
 {
-  "ir_version": 2,
+  "ir_version": 3,
   "name": "ledger",
   "title": "Ledger API",
   "version": "2026-10-01",
@@ -871,6 +871,7 @@ expression: "parse(\"ledger.yaml\")"
           ],
           "body": {
             "encoding": "binary",
+            "content_type": "application/octet-stream",
             "required": true,
             "ty": {
               "kind": "file"

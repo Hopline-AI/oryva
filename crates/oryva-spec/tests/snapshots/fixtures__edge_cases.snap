@@ -1,0 +1,846 @@
+---
+source: crates/oryva-spec/tests/fixtures.rs
+expression: "parse(\"edge-cases.yaml\")"
+---
+{
+  "ir_version": 3,
+  "name": "edge",
+  "title": "Edge API",
+  "version": "1",
+  "description": null,
+  "servers": [
+    {
+      "name": "api",
+      "url": "https://api.edge.example",
+      "description": null
+    }
+  ],
+  "auth": [
+    {
+      "kind": "bearer",
+      "env_var": "EDGE_API_KEY"
+    }
+  ],
+  "idempotency_header": null,
+  "resources": [
+    {
+      "name": "items",
+      "description": null,
+      "methods": [
+        {
+          "name": "create",
+          "http_method": "POST",
+          "path": "/items",
+          "summary": "\"Quoted\" summary",
+          "description": "\"Starts with a quote, has \"\"\" triple quotes, a back\\slash and a */ comment end.\nEnds with a quote: \"done\"",
+          "params": [
+            {
+              "name": "from",
+              "ident": "from",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": "A keyword.",
+              "default": null
+            },
+            {
+              "name": "async",
+              "ident": "async",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "boolean"
+              },
+              "description": null,
+              "default": null
+            },
+            {
+              "name": "timeout",
+              "ident": "timeout",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "integer"
+              },
+              "description": "Same name as a request option.",
+              "default": null
+            },
+            {
+              "name": "self",
+              "ident": "self",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            },
+            {
+              "name": "options",
+              "ident": "options",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            },
+            {
+              "name": "ids",
+              "ident": "ids",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "array",
+                "items": {
+                  "kind": "string",
+                  "format": null
+                }
+              },
+              "description": null,
+              "default": null
+            },
+            {
+              "name": "X-Class",
+              "ident": "x_class",
+              "location": "header",
+              "required": false,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": {
+            "encoding": "json",
+            "required": false,
+            "ty": {
+              "kind": "named",
+              "name": "ItemsCreateRequest2"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Flags"
+            }
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "get",
+          "http_method": "GET",
+          "path": "/items/{import}",
+          "summary": null,
+          "description": null,
+          "params": [
+            {
+              "name": "import",
+              "ident": "import",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            },
+            {
+              "name": "default",
+              "ident": "default",
+              "location": "query",
+              "required": false,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Page"
+            }
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "quote",
+          "http_method": "GET",
+          "path": "/quotes/{quote}",
+          "summary": null,
+          "description": null,
+          "params": [
+            {
+              "name": "quote",
+              "ident": "quote",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Stream"
+            }
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "set_avatar",
+          "http_method": "PUT",
+          "path": "/avatars/{id}",
+          "summary": null,
+          "description": null,
+          "params": [
+            {
+              "name": "id",
+              "ident": "id",
+              "location": "path",
+              "required": true,
+              "ty": {
+                "kind": "string",
+                "format": null
+              },
+              "description": null,
+              "default": null
+            }
+          ],
+          "body": {
+            "encoding": "binary",
+            "content_type": "image/jpeg",
+            "required": true,
+            "ty": {
+              "kind": "file"
+            }
+          },
+          "response": {
+            "kind": "empty"
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "add_note",
+          "http_method": "POST",
+          "path": "/notes",
+          "summary": null,
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "binary",
+            "content_type": "text/plain",
+            "required": false,
+            "ty": {
+              "kind": "file"
+            }
+          },
+          "response": {
+            "kind": "empty"
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "import",
+      "description": "Ends with a quote: \"import\"",
+      "methods": [
+        {
+          "name": "list",
+          "http_method": "GET",
+          "path": "/imports",
+          "summary": null,
+          "description": null,
+          "params": [],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "ConflictError"
+            }
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "workflows",
+      "description": null,
+      "methods": [
+        {
+          "name": "list",
+          "http_method": "GET",
+          "path": "/workflows",
+          "summary": null,
+          "description": null,
+          "params": [],
+          "body": null,
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Workflows"
+            }
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        },
+        {
+          "name": "create",
+          "http_method": "POST",
+          "path": "/workflows",
+          "summary": null,
+          "description": null,
+          "params": [],
+          "body": {
+            "encoding": "json",
+            "required": false,
+            "ty": {
+              "kind": "named",
+              "name": "WorkflowsCreateRequest"
+            }
+          },
+          "response": {
+            "kind": "json",
+            "ty": {
+              "kind": "named",
+              "name": "Workflows"
+            }
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": false,
+            "destructive": false,
+            "idempotent": false,
+            "hint": null,
+            "examples": []
+          }
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "ConflictError",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "message",
+            "ident": "message",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "Flags",
+      "description": "Ends with a quote: \"flags\"",
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "async",
+            "ident": "async",
+            "ty": {
+              "kind": "boolean"
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "from",
+            "ident": "from",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": "Says \"hi\"",
+            "default": null
+          },
+          {
+            "name": "class",
+            "ident": "class",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "lambda",
+            "ident": "lambda",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "json",
+            "ident": "json",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "schema",
+            "ident": "schema",
+            "ty": {
+              "kind": "map",
+              "values": {
+                "kind": "any"
+              }
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "copy",
+            "ident": "copy",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "model_dump",
+            "ident": "model_dump",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "+1",
+            "ident": "1",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "-1",
+            "ident": "1",
+            "ty": {
+              "kind": "integer"
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "1st",
+            "ident": "1st",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "with-dash",
+            "ident": "with_dash",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "x.y",
+            "ident": "x_y",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "delete",
+            "ident": "delete",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "it's",
+            "ident": "it_s",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": "Has a */ and a \"\"\" inside.",
+            "default": null
+          },
+          {
+            "name": "nested",
+            "ident": "nested",
+            "ty": {
+              "kind": "named",
+              "name": "FlagsNested"
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "settings",
+            "ident": "settings",
+            "ty": {
+              "kind": "named",
+              "name": "Settings"
+            },
+            "required": false,
+            "description": null,
+            "default": {
+              "verbose": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "FlagsNested",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "None",
+            "ident": "none",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "ItemsCreateRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "id",
+            "ident": "id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "ItemsCreateRequest2",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "class",
+            "ident": "class",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "ids",
+            "ident": "ids",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": "Same name as the query parameter.",
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "Optional",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "any",
+            "ident": "any",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "Page",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "data",
+            "ident": "data",
+            "ty": {
+              "kind": "array",
+              "items": {
+                "kind": "named",
+                "name": "Optional"
+              }
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "Settings",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "verbose",
+            "ident": "verbose",
+            "ty": {
+              "kind": "boolean"
+            },
+            "required": false,
+            "description": null,
+            "default": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "Stream",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "flags",
+            "ident": "flags",
+            "ty": {
+              "kind": "named",
+              "name": "Flags"
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "settings",
+            "ident": "settings",
+            "ty": {
+              "kind": "named",
+              "name": "Settings"
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "Workflows",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "id",
+            "ident": "id",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "WorkflowsCreateRequest",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "name",
+            "ident": "name",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": true,
+            "description": null,
+            "default": null
+          },
+          {
+            "name": "options",
+            "ident": "options",
+            "ty": {
+              "kind": "named",
+              "name": "Optional"
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    }
+  ],
+  "webhooks": [],
+  "webhook_signing": null
+}

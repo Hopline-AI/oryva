@@ -605,10 +605,11 @@ fn binary_request_bodies() {
     assert_eq!(b.encoding, BodyEncoding::Binary);
     let b = body("          image/png: {schema: {type: string, contentMediaType: image/png}}");
     assert_eq!((b.encoding, b.ty), (BodyEncoding::Binary, TypeRef::File));
+    // A body with no content type at all is still an error.
     let e = err(
         "3.1.0",
         &format!(
-            "paths:\n  /up:\n    post:\n      requestBody:\n        content:\n          text/plain: {{schema: {{type: string}}}}\n      {R200}\n"
+            "paths:\n  /up:\n    post:\n      requestBody:\n        content: {{}}\n      {R200}\n"
         ),
     );
     assert!(e.contains("requestBody"), "{e}");
@@ -769,4 +770,73 @@ fn nullable_component_references_are_wrapped() {
         api.type_def("Maybe").unwrap().shape,
         Shape::Object { .. }
     ));
+}
+
+fn edge_cases() -> Api {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/specs/edge-cases.yaml");
+    parse_file(&path).unwrap()
+}
+
+fn edge_items(api: &Api) -> &[oryva_ir::Method] {
+    &api.resources
+        .iter()
+        .find(|r| r.name == "items")
+        .unwrap()
+        .methods
+}
+
+#[test]
+fn hoisted_object_that_shares_a_component_name_gets_a_number() {
+    let api = edge_cases();
+    let create = edge_items(&api)
+        .iter()
+        .find(|m| m.name == "create")
+        .unwrap();
+    // The component `ItemsCreateRequest` keeps its name; the inline body becomes `...2`.
+    assert_eq!(
+        create.body.as_ref().unwrap().ty,
+        TypeRef::Named {
+            name: "ItemsCreateRequest2".into()
+        }
+    );
+    assert!(api.type_def("ItemsCreateRequest").is_some());
+}
+
+#[test]
+fn any_other_content_type_is_a_raw_body_that_keeps_its_type() {
+    let api = edge_cases();
+    let body = |name: &str| {
+        let m = edge_items(&api).iter().find(|m| m.name == name).unwrap();
+        m.body.clone().unwrap()
+    };
+    let avatar = body("set_avatar");
+    assert_eq!(avatar.encoding, BodyEncoding::Binary);
+    assert_eq!(avatar.content_type.as_deref(), Some("image/jpeg"));
+    assert_eq!(body("add_note").content_type.as_deref(), Some("text/plain"));
+    // JSON keeps the encoding's standard type.
+    assert_eq!(body("create").content_type, None);
+    // A wildcard range is not something to send.
+    let api = ok(
+        "3.0.3",
+        &format!(
+            "paths:\n  /x:\n    put:\n      requestBody: {{content: {{'*/*': {{}}}}}}\n      {R200}\n"
+        ),
+    );
+    let body = api.resources[0].methods[0].body.clone().unwrap();
+    assert_eq!(
+        body.content_type.as_deref(),
+        Some("application/octet-stream")
+    );
+}
+
+#[test]
+fn spec_larger_than_the_yaml_node_budget_parses() {
+    // The YAML parser's default budget stops at 250,000 nodes; real specs are bigger.
+    let values: String = (0..300_000).map(|i| format!("a{i},")).collect();
+    let api = ok(
+        "3.0.3",
+        &format!("components:\n  schemas:\n    Big: {{type: string, enum: [{values}]}}\n"),
+    );
+    assert_eq!(api.types.len(), 1);
 }

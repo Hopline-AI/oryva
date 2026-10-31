@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Bumped on any breaking change to the shapes below.
-pub const IR_VERSION: u32 = 2;
+pub const IR_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Api {
@@ -142,6 +142,10 @@ pub enum ParamLocation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Body {
     pub encoding: BodyEncoding,
+    /// The `Content-Type` to send for a `Binary` body, e.g. `image/jpeg`. `None` means the
+    /// encoding's standard type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
     pub required: bool,
     /// Usually a `Named` object; emitters flatten its fields into keyword arguments.
     /// `File` for a `Binary` body.

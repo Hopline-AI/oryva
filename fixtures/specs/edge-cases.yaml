@@ -1,0 +1,203 @@
+# Valid but nasty patterns found in real specs, in a neutral API. Parser and both emitters are
+# tested against it; the emitters' existing compile checks (ruff, compileall, tsc) cover the
+# generated code. Add a pattern here whenever a real spec breaks the generator.
+#
+# Covers: Python and TypeScript keywords as field, parameter, resource and method names; names
+# that collide (`+1` / `-1`, a query and a body field called `ids`, per-request option names,
+# `self`); a component that shares its name with a hoisted inline object, a resource class and
+# runtime classes; quotes, backslashes, `"""` and `*/` in descriptions; request bodies of any
+# content type; an optional body with required fields; an object default; a path parameter that
+# shadows a helper.
+openapi: 3.0.3
+info:
+  title: Edge API
+  version: "1"
+  x-oryva-name: edge
+servers:
+  - url: https://api.edge.example
+security:
+  - bearerAuth: []
+tags:
+  - name: items
+  - name: import
+    description: 'Ends with a quote: "import"'
+  - name: workflows
+paths:
+  /items:
+    post:
+      tags: [items]
+      operationId: items_create
+      summary: '"Quoted" summary'
+      description: |-
+        "Starts with a quote, has """ triple quotes, a back\slash and a */ comment end.
+        Ends with a quote: "done"
+      parameters:
+        - {name: from, in: query, schema: {type: string}, description: 'A keyword.'}
+        - {name: async, in: query, schema: {type: boolean}}
+        - {name: timeout, in: query, schema: {type: integer}, description: 'Same name as a request option.'}
+        - {name: self, in: query, schema: {type: string}}
+        - {name: options, in: query, schema: {type: string}}
+        - {name: ids, in: query, schema: {type: array, items: {type: string}}}
+        - {name: X-Class, in: header, schema: {type: string}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [class]
+              properties:
+                class: {type: string}
+                ids: {type: string, description: 'Same name as the query parameter.'}
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Flags"}
+  /items/{import}:
+    get:
+      tags: [items]
+      operationId: items_get
+      parameters:
+        - {name: import, in: path, required: true, schema: {type: string}}
+        - {name: default, in: query, schema: {type: string}}
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Page"}
+  /quotes/{quote}:
+    get:
+      tags: [items]
+      operationId: items_quote
+      parameters:
+        - {name: quote, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Stream"}
+  /avatars/{id}:
+    put:
+      tags: [items]
+      operationId: items_set_avatar
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema: {type: string, format: binary}
+      responses:
+        "204": {description: done}
+  /notes:
+    post:
+      tags: [items]
+      operationId: items_add_note
+      requestBody:
+        content:
+          text/plain:
+            schema: {type: string}
+      responses:
+        "204": {description: done}
+  /imports:
+    get:
+      tags: [import]
+      operationId: import_list
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ConflictError"}
+  /workflows:
+    get:
+      tags: [workflows]
+      operationId: workflows_list
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Workflows"}
+    post:
+      tags: [workflows]
+      operationId: workflows_create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string}
+                options: {$ref: "#/components/schemas/Optional"}
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Workflows"}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+  schemas:
+    # Shares its name with the hoisted request body of `items.create`.
+    ItemsCreateRequest:
+      type: object
+      properties:
+        id: {type: string}
+    Flags:
+      type: object
+      description: 'Ends with a quote: "flags"'
+      properties:
+        async: {type: boolean}
+        from: {type: string, description: 'Says "hi"'}
+        class: {type: string}
+        lambda: {type: string}
+        json: {type: string}
+        schema: {type: object}
+        copy: {type: string}
+        model_dump: {type: string}
+        "+1": {type: integer}
+        "-1": {type: integer}
+        1st: {type: string}
+        with-dash: {type: string}
+        x.y: {type: string}
+        delete: {type: string}
+        "it's": {type: string, description: 'Has a */ and a """ inside.'}
+        nested:
+          type: object
+          properties:
+            None: {type: string}
+        settings:
+          allOf: [{$ref: "#/components/schemas/Settings"}]
+          default: {verbose: true}
+    Settings:
+      type: object
+      properties:
+        verbose: {type: boolean, default: false}
+    # Names the generated code also uses.
+    Page:
+      type: object
+      properties:
+        data: {type: array, items: {$ref: "#/components/schemas/Optional"}}
+    Optional:
+      type: object
+      properties:
+        any: {type: string}
+    Stream:
+      type: object
+      properties:
+        flags: {$ref: "#/components/schemas/Flags"}
+        settings: {$ref: "#/components/schemas/Settings"}
+    ConflictError:
+      type: object
+      properties:
+        message: {type: string}
+    Workflows:
+      type: object
+      properties:
+        id: {type: string}

@@ -3,7 +3,7 @@ source: crates/oryva-spec/tests/fixtures.rs
 expression: "parse(\"petstore-3.0.yaml\")"
 ---
 {
-  "ir_version": 2,
+  "ir_version": 3,
   "name": "swagger",
   "title": "Swagger Petstore",
   "version": "1.0.0",
