@@ -11,6 +11,23 @@ use serde::Serialize;
 use crate::Options;
 use crate::ts;
 
+/// Classes `errors.ts` exports besides the API's own `<Name>Error`.
+const ERROR_CLASSES: &[&str] = &[
+    "APIError",
+    "BadRequestError",
+    "AuthenticationError",
+    "PermissionDeniedError",
+    "NotFoundError",
+    "ConflictError",
+    "UnprocessableEntityError",
+    "RateLimitError",
+    "InternalServerError",
+    "APIConnectionError",
+    "APIConnectionTimeoutError",
+    "APIUserAbortError",
+    "WebhookVerificationError",
+];
+
 #[derive(Serialize)]
 pub struct Common {
     pub name: String,
@@ -37,6 +54,8 @@ pub struct Common {
     pub example_option: String,
     pub example_env: String,
     pub class_doc: String,
+    /// Error classes that a model of the same name would otherwise collide with in the barrel.
+    pub error_clashes: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -186,10 +205,18 @@ pub fn common(api: &Api, opts: &Options) -> Common {
         .map(|s| s.name.clone())
         .unwrap_or_default();
     let example = options.first();
+    let error = format!("{}Error", ts::pascal(&api.name));
+    let error_clashes = ERROR_CLASSES
+        .iter()
+        .map(|n| n.to_string())
+        .chain([error.clone()])
+        .filter(|n| api.type_def(n).is_some())
+        .collect();
     Common {
+        error_clashes,
         name: api.name.clone(),
         client: ts::pascal(&api.name),
-        error: format!("{}Error", ts::pascal(&api.name)),
+        error,
         package: opts.package.clone(),
         version: opts.version.clone(),
         title: api.title.clone(),
@@ -218,7 +245,7 @@ pub fn common(api: &Api, opts: &Options) -> Common {
             .iter()
             .map(|r| ResourceRef {
                 name: ts::prop(&r.name),
-                class: ts::pascal(&r.name),
+                class: resource_class(api, &r.name),
                 file: r.name.clone(),
                 params: r
                     .methods
@@ -287,6 +314,16 @@ fn params_name(r: &Resource, m: &Method) -> String {
     format!("{}{}Params", ts::pascal(&r.name), ts::pascal(&m.name))
 }
 
+/// The class for a resource. A component schema of the same name wins the plain name.
+fn resource_class(api: &Api, name: &str) -> String {
+    let class = ts::pascal(name);
+    if api.type_def(&class).is_some() {
+        format!("{class}Resource")
+    } else {
+        class
+    }
+}
+
 fn is_extra(p: &Param) -> bool {
     p.location != ParamLocation::Path
 }
@@ -316,7 +353,7 @@ fn list(names: &[&str]) -> String {
 
 pub fn resource_ctx(api: &Api, r: &Resource) -> ResourceCtx {
     let mut ctx = ResourceCtx {
-        class: ts::pascal(&r.name),
+        class: resource_class(api, &r.name),
         description: r.description.clone().unwrap_or_default(),
         methods: Vec::new(),
         declarations: Vec::new(),
@@ -546,8 +583,15 @@ fn method_source(api: &Api, r: &Resource, m: &Method, names: &mut BTreeSet<Strin
         .collect();
     let mut fields = vec![format!("method: '{verb}'"), format!("path: {path}")];
     if has_params(m) {
-        let required = m.body.as_ref().is_some_and(|b| b.required)
-            || m.params.iter().any(|p| is_extra(p) && p.required);
+        // `params = {}` only type-checks when no key of the params type is required, and an
+        // optional body of an object type still brings that object's required fields.
+        let body_needs_fields = m.body.as_ref().is_some_and(|b| {
+            b.required
+                || object_body(api, b)
+                    .and_then(|n| api.type_def(n))
+                    .is_some_and(|t| matches!(&t.shape, Shape::Object { fields } if fields.iter().any(|f| f.required)))
+        });
+        let required = body_needs_fields || m.params.iter().any(|p| is_extra(p) && p.required);
         let ptype = params_name(r, m);
         args.push(if required {
             format!("params: {ptype}")
@@ -577,7 +621,12 @@ fn method_source(api: &Api, r: &Resource, m: &Method, names: &mut BTreeSet<Strin
                 BodyEncoding::Json => {}
                 BodyEncoding::Multipart => fields.push("encoding: 'multipart'".into()),
                 BodyEncoding::Form => fields.push("encoding: 'form'".into()),
-                BodyEncoding::Binary => fields.push("encoding: 'binary'".into()),
+                BodyEncoding::Binary => {
+                    fields.push("encoding: 'binary'".into());
+                    if let Some(ct) = &body.content_type {
+                        fields.push(format!("contentType: {}", ts::string(ct)));
+                    }
+                }
             }
         }
     }

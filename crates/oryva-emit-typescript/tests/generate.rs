@@ -102,3 +102,28 @@ fn package_version_is_semver() {
     api.version = "v2-beta".into();
     assert_eq!(Options::for_api(&api).version, "0.1.0");
 }
+
+/// Keywords, odd characters, name collisions and nasty descriptions from real specs, checked
+/// with `tsc`.
+#[test]
+fn edge_cases_type_check() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/specs/edge-cases.yaml");
+    let api = oryva_spec::parse_file(&path).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    emit_sdk(&api, &Options::for_api(&api), dir.path()).unwrap();
+    type_check(dir.path());
+
+    let read = |p: &str| std::fs::read_to_string(dir.path().join("src").join(p)).unwrap();
+    let items = read("resources/items.ts");
+    // The body's content type is sent as declared.
+    assert!(items.contains("contentType: 'image/jpeg'"));
+    // An optional body with required fields can't default to `{}`.
+    let workflows = read("resources/workflows.ts");
+    assert!(workflows.contains("create(params: WorkflowsCreateParams, options"));
+    // A resource whose name is also a model gets a `Resource` suffix.
+    assert!(workflows.contains("export class WorkflowsResource"));
+    // A model named like an error class does not make the barrel ambiguous.
+    assert!(read("index.ts").contains("export { ConflictError } from './errors.js';"));
+    // `*/` cannot end a doc comment early.
+    assert!(!read("types.ts").contains("a */ and"));
+}

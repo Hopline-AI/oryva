@@ -79,6 +79,8 @@ export interface RequestSpec {
   /** The body: an object for JSON, multipart and form bodies, an `Uploadable` for binary ones. */
   body?: unknown;
   encoding?: 'json' | 'multipart' | 'form' | 'binary';
+  /** The `Content-Type` of a binary body; default is the file's own type. */
+  contentType?: string;
   /** How to read the response. Default `json`. */
   response?: 'json' | 'text' | 'binary' | 'empty' | 'stream';
 }
@@ -330,7 +332,7 @@ async function encodeBody(
   if (spec.encoding === 'binary') {
     if (spec.body === undefined) return { body: undefined };
     const blob = await toBlob(spec.body as Uploadable);
-    return { body: blob, contentType: blob.type || 'application/octet-stream' };
+    return { body: blob, contentType: spec.contentType || blob.type || 'application/octet-stream' };
   }
   if (spec.body === undefined && !options.body) return { body: undefined };
   const fields = { ...(spec.body as object | undefined), ...options.body };

@@ -13,6 +13,9 @@ export { Page } from './pagination.js';
 export { Stream } from './streaming.js';
 export { toFile, type Uploadable } from './uploads.js';
 export type * from './types.js';
+{% for name in c.error_clashes %}
+export { {{ name }} } from './errors.js';
+{% endfor %}
 {% if c.webhook_secret_env %}
 export { type UnwrapWebhookEvent, type WebhookHeaders, Webhooks } from './webhooks.js';
 {% endif %}
