@@ -1,0 +1,191 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from urllib.parse import quote
+
+from typing_extensions import Unpack
+
+from .._base import RequestOptions
+from .._pagination import AsyncPage, Page, SyncPage
+from .._response import APIResponse
+from .._utils import NOT_GIVEN, NotGiven
+from ..types import Payment, PaymentsListResponse
+
+if TYPE_CHECKING:
+    from .._client import AsyncLedger, Ledger
+
+
+class Payments:
+    """Money received."""
+
+    def __init__(self, client: Ledger) -> None:
+        self._client = client
+
+    def list(
+        self,
+        *,
+        page: int | NotGiven = NOT_GIVEN,
+        invoice_id: str | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> SyncPage[Payment]:
+        """List payments.
+
+        Args:
+            page: Defaults to 1.
+
+        Returns one page. Iterate it to walk every item across pages.
+        """
+        return self._client._paginate(
+            "GET",
+            "/payments",
+            paging=Page(page_param="page", items=("items",)),
+            item_type=Payment,
+            response_type=PaymentsListResponse,
+            params={"page": page, "invoice_id": invoice_id},
+            options=options,
+        )
+
+    def get(
+        self,
+        *,
+        payment_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> Payment:
+        """Fetch one payment."""
+        path = f"/payments/{quote(payment_id, safe='')}"
+        return self._client._request("GET", path, cast_to=Payment, options=options)
+
+
+class PaymentsWithRawResponse:
+    """`Payments` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: Ledger) -> None:
+        self._client = client
+
+    def list(
+        self,
+        *,
+        page: int | NotGiven = NOT_GIVEN,
+        invoice_id: str | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[SyncPage[Payment]]:
+        """List payments.
+
+        Args:
+            page: Defaults to 1.
+
+        Returns one page. Iterate it to walk every item across pages.
+        """
+        return self._client._paginate(
+            "GET",
+            "/payments",
+            paging=Page(page_param="page", items=("items",)),
+            item_type=Payment,
+            response_type=PaymentsListResponse,
+            params={"page": page, "invoice_id": invoice_id},
+            options=options,
+            raw=True,
+        )
+
+    def get(
+        self,
+        *,
+        payment_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Payment]:
+        """Fetch one payment."""
+        path = f"/payments/{quote(payment_id, safe='')}"
+        return self._client._request(
+            "GET", path, cast_to=Payment, options=options, raw=True
+        )
+
+
+class AsyncPayments:
+    """Money received."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self._client = client
+
+    async def list(
+        self,
+        *,
+        page: int | NotGiven = NOT_GIVEN,
+        invoice_id: str | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> AsyncPage[Payment]:
+        """List payments.
+
+        Args:
+            page: Defaults to 1.
+
+        Returns one page. Iterate it to walk every item across pages.
+        """
+        return await self._client._paginate(
+            "GET",
+            "/payments",
+            paging=Page(page_param="page", items=("items",)),
+            item_type=Payment,
+            response_type=PaymentsListResponse,
+            params={"page": page, "invoice_id": invoice_id},
+            options=options,
+        )
+
+    async def get(
+        self,
+        *,
+        payment_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> Payment:
+        """Fetch one payment."""
+        path = f"/payments/{quote(payment_id, safe='')}"
+        return await self._client._request(
+            "GET", path, cast_to=Payment, options=options
+        )
+
+
+class AsyncPaymentsWithRawResponse:
+    """`AsyncPayments` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self._client = client
+
+    async def list(
+        self,
+        *,
+        page: int | NotGiven = NOT_GIVEN,
+        invoice_id: str | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[AsyncPage[Payment]]:
+        """List payments.
+
+        Args:
+            page: Defaults to 1.
+
+        Returns one page. Iterate it to walk every item across pages.
+        """
+        return await self._client._paginate(
+            "GET",
+            "/payments",
+            paging=Page(page_param="page", items=("items",)),
+            item_type=Payment,
+            response_type=PaymentsListResponse,
+            params={"page": page, "invoice_id": invoice_id},
+            options=options,
+            raw=True,
+        )
+
+    async def get(
+        self,
+        *,
+        payment_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Payment]:
+        """Fetch one payment."""
+        path = f"/payments/{quote(payment_id, safe='')}"
+        return await self._client._request(
+            "GET", path, cast_to=Payment, options=options, raw=True
+        )

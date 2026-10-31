@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import json
+import os
+import time
+from typing import Mapping, Optional, Union
+
+from .._base import BaseClient
+from .._errors import WebhookVerificationError
+from .._utils import adapter
+from ..types import WebhookEvent
+
+SECRET_ENV = {{ c.webhook_secret_env | q }}
+# Reject deliveries whose timestamp is further than this from now (seconds).
+TOLERANCE = 5 * 60
+
+
+class Webhooks:
+    """Verify and parse webhooks that {{ c.title }} sends to your endpoint."""
+
+    def __init__(self, client: BaseClient) -> None:
+        self._client = client
+
+    def unwrap(
+        self,
+        body: Union[str, bytes],
+        headers: Mapping[str, str],
+        *,
+        secret: Optional[str] = None,
+    ) -> WebhookEvent:
+        """Check the signature, then return the event as a typed model.
+
+        Pass the raw request body, exactly as received, and the request headers. The secret
+        comes from `secret=`, the client's `webhook_secret=`, or `{{ c.webhook_secret_env }}`.
+
+        Raises:
+            WebhookVerificationError: The signature, timestamp or headers are wrong.
+        """
+        self.verify(body, headers, secret=secret)
+        try:
+            payload = json.loads(body)
+        except ValueError as exc:
+            raise WebhookVerificationError("The webhook body is not valid JSON.") from exc
+        event: WebhookEvent = adapter(WebhookEvent).validate_python(payload)
+        return event
+
+    def verify(
+        self,
+        body: Union[str, bytes],
+        headers: Mapping[str, str],
+        *,
+        secret: Optional[str] = None,
+    ) -> None:
+        """Check a delivery's signature and timestamp (Standard Webhooks, standardwebhooks.com)."""
+        secret = secret or self._client.webhook_secret or os.environ.get(SECRET_ENV)
+        if not secret:
+            raise WebhookVerificationError(
+                "No webhook secret found. Pass secret='whsec_...' or webhook_secret= to the "
+                "client, or set the {{ c.webhook_secret_env }} environment variable."
+            )
+        lowered = {k.lower(): v for k, v in headers.items()}
+        try:
+            msg_id = lowered["webhook-id"]
+            timestamp = lowered["webhook-timestamp"]
+            signatures = lowered["webhook-signature"]
+        except KeyError as exc:
+            raise WebhookVerificationError(
+                f"Missing the {exc.args[0]} header. Pass every request header to unwrap()."
+            ) from exc
+        try:
+            sent_at = int(timestamp)
+        except ValueError as exc:
+            raise WebhookVerificationError("The webhook-timestamp header is not a number.") from exc
+        if abs(time.time() - sent_at) > TOLERANCE:
+            raise WebhookVerificationError(
+                "The webhook timestamp is more than 5 minutes from now. "
+                "Check the server clock; a replayed delivery is rejected."
+            )
+        payload = body.encode() if isinstance(body, str) else body
+        signed = f"{msg_id}.{timestamp}.".encode() + payload
+        expected = base64.b64encode(hmac.new(_key(secret), signed, hashlib.sha256).digest())
+        for candidate in signatures.split():
+            version, _, signature = candidate.partition(",")
+            if version == "v1" and hmac.compare_digest(signature.encode(), expected):
+                return
+        raise WebhookVerificationError(
+            "No signature matched. Check that the secret belongs to this endpoint "
+            "and that the body is the raw bytes received, not re-serialized JSON."
+        )
+
+
+def _key(secret: str) -> bytes:
+    try:
+        return base64.b64decode(secret.removeprefix("whsec_"), validate=True)
+    except ValueError as exc:
+        raise WebhookVerificationError(
+            "The webhook secret is not valid. Use the whsec_... value from your dashboard."
+        ) from exc

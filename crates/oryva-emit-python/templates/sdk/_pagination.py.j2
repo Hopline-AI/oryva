@@ -1,0 +1,169 @@
+"""Pages of list results."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, AsyncIterator, Dict, Generic, Iterator, List, Optional, Tuple, TypeVar, Union
+
+import httpx
+
+from ._errors import {{ c.error_base }}
+from ._utils import NotGiven, adapter
+
+T = TypeVar("T")
+
+
+def _dig(body: Any, path: Tuple[str, ...]) -> Any:
+    for key in path:
+        if not isinstance(body, dict):
+            return None
+        body = body.get(key)
+    return body
+
+
+def _given(value: Any) -> Any:
+    return None if isinstance(value, NotGiven) else value
+
+
+@dataclass(frozen=True)
+class Cursor:
+    """The response carries a cursor; send it back as query parameter `param`."""
+
+    param: str
+    next_cursor: Tuple[str, ...]
+    items: Tuple[str, ...]
+
+    def next_params(
+        self, params: Dict[str, Any], body: Any, items: List[Any]
+    ) -> Optional[Dict[str, Any]]:
+        cursor = _dig(body, self.next_cursor)
+        return {self.param: cursor} if items and cursor is not None else None
+
+
+@dataclass(frozen=True)
+class Offset:
+    """Advance query parameter `offset_param` by the number of items received."""
+
+    offset_param: str
+    limit_param: str
+    items: Tuple[str, ...]
+
+    def next_params(
+        self, params: Dict[str, Any], body: Any, items: List[Any]
+    ) -> Optional[Dict[str, Any]]:
+        offset = int(_given(params.get(self.offset_param)) or 0)
+        return {self.offset_param: offset + len(items)} if items else None
+
+
+@dataclass(frozen=True)
+class Page:
+    """Count up query parameter `page_param`, starting from the caller's value or 1."""
+
+    page_param: str
+    items: Tuple[str, ...]
+
+    def next_params(
+        self, params: Dict[str, Any], body: Any, items: List[Any]
+    ) -> Optional[Dict[str, Any]]:
+        page = int(_given(params.get(self.page_param)) or 1)
+        return {self.page_param: page + 1} if items else None
+
+
+Paging = Union[Cursor, Offset, Page]
+
+
+class _BasePage(Generic[T]):
+    """One page of results.
+
+    `items` holds this page's items and `response` the whole parsed response, including fields
+    such as totals. Use `has_next_page()` and `next_page()` to move on, or iterate the page to
+    walk every item on every page.
+    """
+
+    items: List[T]
+
+    def __init__(
+        self,
+        *,
+        client: Any,
+        method: str,
+        path: str,
+        request: Dict[str, Any],
+        paging: Paging,
+        item_type: Any,
+        response_type: Any,
+        http_response: httpx.Response,
+    ) -> None:
+        body = http_response.json()
+        self._client = client
+        self._method = method
+        self._path = path
+        self._request = request
+        self._paging = paging
+        self._item_type = item_type
+        self._response_type = response_type
+        self.http_response = http_response
+        self.response: Any = adapter(response_type).validate_python(body)
+        validate = adapter(item_type).validate_python
+        self.items = [validate(item) for item in _dig(body, paging.items) or []]
+        self._next = paging.next_params(request.get("params") or {}, body, self.items)
+
+    def has_next_page(self) -> bool:
+        return self._next is not None
+
+    def next_page_info(self) -> Optional[Dict[str, Any]]:
+        """The query parameters that fetch the next page, or None on the last page."""
+        return dict(self._next) if self._next is not None else None
+
+    def _next_request(self) -> Dict[str, Any]:
+        if self._next is None:
+            raise {{ c.error_base }}(
+                "There is no next page. Check has_next_page() before calling next_page()."
+            )
+        params = {**(self._request.get("params") or {}), **self._next}
+        return {**self._request, "params": params}
+
+
+class SyncPage(_BasePage[T]):
+    def next_page(self) -> SyncPage[T]:
+        """Fetch the next page."""
+        page: SyncPage[T] = self._client._paginate(
+            self._method,
+            self._path,
+            paging=self._paging,
+            item_type=self._item_type,
+            response_type=self._response_type,
+            **self._next_request(),
+        )
+        return page
+
+    def __iter__(self) -> Iterator[T]:
+        page = self
+        while True:
+            yield from page.items
+            if not page.has_next_page():
+                return
+            page = page.next_page()
+
+
+class AsyncPage(_BasePage[T]):
+    async def next_page(self) -> AsyncPage[T]:
+        """Fetch the next page."""
+        page: AsyncPage[T] = await self._client._paginate(
+            self._method,
+            self._path,
+            paging=self._paging,
+            item_type=self._item_type,
+            response_type=self._response_type,
+            **self._next_request(),
+        )
+        return page
+
+    async def __aiter__(self) -> AsyncIterator[T]:
+        page = self
+        while True:
+            for item in page.items:
+                yield item
+            if not page.has_next_page():
+                return
+            page = await page.next_page()

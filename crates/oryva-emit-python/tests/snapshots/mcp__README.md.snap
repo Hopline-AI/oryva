@@ -2,26 +2,35 @@
 source: crates/oryva-emit-python/tests/generate.rs
 expression: content
 ---
-# sarvam-mcp
+# ledger-mcp
 
-An [MCP](https://modelcontextprotocol.io) server for the Sarvam API (lite fixture). It wraps the
-[`sarvam`](https://pypi.org/project/sarvam/) Python SDK and exposes one tool per
+An [MCP](https://modelcontextprotocol.io) server for the Ledger API. It wraps the
+[`ledger`](https://pypi.org/project/ledger/) Python SDK and exposes one tool per
 API method, named `<resource>_<method>`:
 
-- `text_translate`: Translate text between Indian languages and English
-- `text_transliterate`: Convert text between scripts without translating it
-- `text_identify_language`: Identify the language and script of a piece of text
-- `text_to_speech_convert`: Synthesize speech from text
-- `speech_to_text_transcribe`: Transcribe an audio file
-- `pronunciations_list`: List custom pronunciations
-- `pronunciations_create`: Add a custom pronunciation
-- `pronunciations_get`: Fetch one custom pronunciation
-- `pronunciations_delete`: Delete a custom pronunciation
+- `customers_list`: List customers, newest first
+- `customers_create`: Create a customer
+- `customers_search`: Search customers by name
+- `customers_get`: Fetch one customer
+- `customers_update`: Change a customer's name, email or metadata
+- `customers_delete`: Delete a customer and all their unpaid invoices
+- `invoices_list`: List invoices
+- `invoices_create`: Create a draft invoice
+- `invoices_get`: Fetch one invoice
+- `invoices_finalize`: Turn a draft invoice into an open one and email it to the customer
+- `invoices_void`: Void an open invoice so it can no longer be paid
+- `invoices_download_pdf`: Download the invoice as a PDF
+- `payments_list`: List payments
+- `payments_get`: Fetch one payment
+- `refunds_create`: Refund all or part of a payment
+- `files_upload`: Upload a file, such as a receipt, as a multipart form
+- `files_upload_raw`: Upload a file as the raw request body
+- `events_stream`: Stream account events as they happen
 
 ## Install
 
 ```sh
-pip install sarvam-mcp
+pip install ledger-mcp
 ```
 
 Requires Python 3.10 or newer.
@@ -31,8 +40,7 @@ Requires Python 3.10 or newer.
 The server speaks MCP over stdio.
 
 ```sh
-export SARVAM_API_KEY=...
-sarvam-mcp
+ledger-mcp
 ```
 
 Example client configuration:
@@ -40,14 +48,13 @@ Example client configuration:
 ```json
 {
   "mcpServers": {
-    "sarvam": {
-      "command": "sarvam-mcp",
-      "env": { "SARVAM_API_KEY": "..." }
+    "ledger": {
+      "command": "ledger-mcp"
     }
   }
 }
 ```
 
 Tool results are JSON. Binary responses are written to the directory in
-`SARVAM_MCP_OUTPUT_DIR` (a temporary directory by default) and the tool returns the file's path
-and size. Set `SARVAM_BASE_URL` to point the server at a different API host.
+`LEDGER_MCP_OUTPUT_DIR` (a temporary directory by default) and the tool returns the file's path
+and size. Set `LEDGER_BASE_URL` to point the server at a different API host.

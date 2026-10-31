@@ -1,0 +1,159 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Literal, Union
+
+from typing_extensions import Unpack
+
+from .._base import RequestOptions
+from .._response import APIResponse
+from .._utils import NOT_GIVEN, NotGiven
+from ..types import Refund
+
+if TYPE_CHECKING:
+    from .._client import AsyncLedger, Ledger
+
+
+class Refunds:
+    """Money returned."""
+
+    def __init__(self, client: Ledger) -> None:
+        self._client = client
+
+    def create(
+        self,
+        *,
+        payment_id: str,
+        amount: int | NotGiven = NOT_GIVEN,
+        reason: Union[Literal["duplicate", "fraudulent", "requested_by_customer"], str]
+        | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> Refund:
+        """Refund all or part of a payment.
+
+        Moves money back to the customer and can't be reversed. Check the payment's amount first; a refund can't exceed what's left to refund.
+
+        Args:
+            amount: Smallest currency unit. Omit to refund the full remaining amount.
+
+        Raises:
+            BadRequestError: The request was invalid; `error.param` names the field.
+            ConflictError: The idempotency key was reused with a different request body.
+        """
+        return self._client._request(
+            "POST",
+            "/refunds",
+            cast_to=Refund,
+            json={"payment_id": payment_id, "amount": amount, "reason": reason},
+            options=options,
+        )
+
+
+class RefundsWithRawResponse:
+    """`Refunds` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: Ledger) -> None:
+        self._client = client
+
+    def create(
+        self,
+        *,
+        payment_id: str,
+        amount: int | NotGiven = NOT_GIVEN,
+        reason: Union[Literal["duplicate", "fraudulent", "requested_by_customer"], str]
+        | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Refund]:
+        """Refund all or part of a payment.
+
+        Moves money back to the customer and can't be reversed. Check the payment's amount first; a refund can't exceed what's left to refund.
+
+        Args:
+            amount: Smallest currency unit. Omit to refund the full remaining amount.
+
+        Raises:
+            BadRequestError: The request was invalid; `error.param` names the field.
+            ConflictError: The idempotency key was reused with a different request body.
+        """
+        return self._client._request(
+            "POST",
+            "/refunds",
+            cast_to=Refund,
+            json={"payment_id": payment_id, "amount": amount, "reason": reason},
+            options=options,
+            raw=True,
+        )
+
+
+class AsyncRefunds:
+    """Money returned."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self._client = client
+
+    async def create(
+        self,
+        *,
+        payment_id: str,
+        amount: int | NotGiven = NOT_GIVEN,
+        reason: Union[Literal["duplicate", "fraudulent", "requested_by_customer"], str]
+        | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> Refund:
+        """Refund all or part of a payment.
+
+        Moves money back to the customer and can't be reversed. Check the payment's amount first; a refund can't exceed what's left to refund.
+
+        Args:
+            amount: Smallest currency unit. Omit to refund the full remaining amount.
+
+        Raises:
+            BadRequestError: The request was invalid; `error.param` names the field.
+            ConflictError: The idempotency key was reused with a different request body.
+        """
+        return await self._client._request(
+            "POST",
+            "/refunds",
+            cast_to=Refund,
+            json={"payment_id": payment_id, "amount": amount, "reason": reason},
+            options=options,
+        )
+
+
+class AsyncRefundsWithRawResponse:
+    """`AsyncRefunds` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self._client = client
+
+    async def create(
+        self,
+        *,
+        payment_id: str,
+        amount: int | NotGiven = NOT_GIVEN,
+        reason: Union[Literal["duplicate", "fraudulent", "requested_by_customer"], str]
+        | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Refund]:
+        """Refund all or part of a payment.
+
+        Moves money back to the customer and can't be reversed. Check the payment's amount first; a refund can't exceed what's left to refund.
+
+        Args:
+            amount: Smallest currency unit. Omit to refund the full remaining amount.
+
+        Raises:
+            BadRequestError: The request was invalid; `error.param` names the field.
+            ConflictError: The idempotency key was reused with a different request body.
+        """
+        return await self._client._request(
+            "POST",
+            "/refunds",
+            cast_to=Refund,
+            json={"payment_id": payment_id, "amount": amount, "reason": reason},
+            options=options,
+            raw=True,
+        )

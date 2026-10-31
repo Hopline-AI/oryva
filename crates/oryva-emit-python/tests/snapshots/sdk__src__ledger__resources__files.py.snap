@@ -1,0 +1,185 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Literal, Union
+
+from typing_extensions import Unpack
+
+from .._base import RequestOptions
+from .._response import APIResponse
+from .._utils import NOT_GIVEN, NotGiven
+from ..types import File, FileInput
+
+if TYPE_CHECKING:
+    from .._client import AsyncLedger, Ledger
+
+
+class Files:
+    """Attachments such as receipts."""
+
+    def __init__(self, client: Ledger) -> None:
+        self._client = client
+
+    def upload(
+        self,
+        *,
+        file: FileInput,
+        purpose: Union[Literal["receipt", "contract"], str] | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> File:
+        """Upload a file, such as a receipt, as a multipart form."""
+        return self._client._request(
+            "POST",
+            "/files",
+            cast_to=File,
+            files={"file": file},
+            data={"purpose": purpose},
+            options=options,
+        )
+
+    def upload_raw(
+        self,
+        *,
+        filename: str,
+        file: FileInput,
+        **options: Unpack[RequestOptions],
+    ) -> File:
+        """Upload a file as the raw request body."""
+        return self._client._request(
+            "POST",
+            "/files/raw",
+            cast_to=File,
+            params={"filename": filename},
+            content=file,
+            options=options,
+        )
+
+
+class FilesWithRawResponse:
+    """`Files` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: Ledger) -> None:
+        self._client = client
+
+    def upload(
+        self,
+        *,
+        file: FileInput,
+        purpose: Union[Literal["receipt", "contract"], str] | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[File]:
+        """Upload a file, such as a receipt, as a multipart form."""
+        return self._client._request(
+            "POST",
+            "/files",
+            cast_to=File,
+            files={"file": file},
+            data={"purpose": purpose},
+            options=options,
+            raw=True,
+        )
+
+    def upload_raw(
+        self,
+        *,
+        filename: str,
+        file: FileInput,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[File]:
+        """Upload a file as the raw request body."""
+        return self._client._request(
+            "POST",
+            "/files/raw",
+            cast_to=File,
+            params={"filename": filename},
+            content=file,
+            options=options,
+            raw=True,
+        )
+
+
+class AsyncFiles:
+    """Attachments such as receipts."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self._client = client
+
+    async def upload(
+        self,
+        *,
+        file: FileInput,
+        purpose: Union[Literal["receipt", "contract"], str] | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> File:
+        """Upload a file, such as a receipt, as a multipart form."""
+        return await self._client._request(
+            "POST",
+            "/files",
+            cast_to=File,
+            files={"file": file},
+            data={"purpose": purpose},
+            options=options,
+        )
+
+    async def upload_raw(
+        self,
+        *,
+        filename: str,
+        file: FileInput,
+        **options: Unpack[RequestOptions],
+    ) -> File:
+        """Upload a file as the raw request body."""
+        return await self._client._request(
+            "POST",
+            "/files/raw",
+            cast_to=File,
+            params={"filename": filename},
+            content=file,
+            options=options,
+        )
+
+
+class AsyncFilesWithRawResponse:
+    """`AsyncFiles` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self._client = client
+
+    async def upload(
+        self,
+        *,
+        file: FileInput,
+        purpose: Union[Literal["receipt", "contract"], str] | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[File]:
+        """Upload a file, such as a receipt, as a multipart form."""
+        return await self._client._request(
+            "POST",
+            "/files",
+            cast_to=File,
+            files={"file": file},
+            data={"purpose": purpose},
+            options=options,
+            raw=True,
+        )
+
+    async def upload_raw(
+        self,
+        *,
+        filename: str,
+        file: FileInput,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[File]:
+        """Upload a file as the raw request body."""
+        return await self._client._request(
+            "POST",
+            "/files/raw",
+            cast_to=File,
+            params={"filename": filename},
+            content=file,
+            options=options,
+            raw=True,
+        )

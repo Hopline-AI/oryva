@@ -1,0 +1,93 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from typing_extensions import Unpack
+
+from .._base import RequestOptions
+from .._response import APIResponse
+from .._streaming import AsyncStream, Stream
+from ..types import Event
+
+if TYPE_CHECKING:
+    from .._client import AsyncLedger, Ledger
+
+
+class Events:
+    """A live feed of account activity."""
+
+    def __init__(self, client: Ledger) -> None:
+        self._client = client
+
+    def stream(
+        self,
+        **options: Unpack[RequestOptions],
+    ) -> Stream[Event]:
+        """Stream account events as they happen.
+
+        Long-lived. Read a few events and stop; don't wait for the stream to end.
+        """
+        return self._client._stream(
+            "GET", "/events/stream", cast_to=Event, options=options
+        )
+
+
+class EventsWithRawResponse:
+    """`Events` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: Ledger) -> None:
+        self._client = client
+
+    def stream(
+        self,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Stream[Event]]:
+        """Stream account events as they happen.
+
+        Long-lived. Read a few events and stop; don't wait for the stream to end.
+        """
+        return self._client._stream(
+            "GET", "/events/stream", cast_to=Event, options=options, raw=True
+        )
+
+
+class AsyncEvents:
+    """A live feed of account activity."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self._client = client
+
+    async def stream(
+        self,
+        **options: Unpack[RequestOptions],
+    ) -> AsyncStream[Event]:
+        """Stream account events as they happen.
+
+        Long-lived. Read a few events and stop; don't wait for the stream to end.
+        """
+        return await self._client._stream(
+            "GET", "/events/stream", cast_to=Event, options=options
+        )
+
+
+class AsyncEventsWithRawResponse:
+    """`AsyncEvents` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self._client = client
+
+    async def stream(
+        self,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[AsyncStream[Event]]:
+        """Stream account events as they happen.
+
+        Long-lived. Read a few events and stop; don't wait for the stream to end.
+        """
+        return await self._client._stream(
+            "GET", "/events/stream", cast_to=Event, options=options, raw=True
+        )

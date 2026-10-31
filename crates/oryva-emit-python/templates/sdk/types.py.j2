@@ -10,7 +10,14 @@ from pydantic import {{ t.pydantic }}
 FileInput = Union[bytes, str, "os.PathLike[str]", BinaryIO]
 """A file to upload: raw bytes, a path, or a file object opened in binary mode."""
 {% for ty in t.types %}
-{% if ty.expr %}
+{% if ty.raw %}
+
+
+{{ ty.raw }}
+{% if ty.doc %}
+"""{{ ty.doc }}"""
+{% endif %}
+{% elif ty.expr %}
 
 {{ ty.name }} = {{ ty.expr }}
 {% if ty.doc %}

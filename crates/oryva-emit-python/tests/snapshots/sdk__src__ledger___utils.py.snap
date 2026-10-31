@@ -1,0 +1,102 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+"""Small helpers shared across the SDK."""
+
+from __future__ import annotations
+
+import os
+import warnings
+from datetime import date, datetime
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Dict, Mapping, Optional, Set, Tuple
+
+from pydantic import BaseModel, TypeAdapter
+
+
+class NotGiven:
+    """The type of `NOT_GIVEN`.
+
+    Methods use `NOT_GIVEN` as the default of every optional argument. Leaving an argument out
+    sends nothing; passing `None` sends `null`.
+    """
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __repr__(self) -> str:
+        return "NOT_GIVEN"
+
+
+NOT_GIVEN = NotGiven()
+
+
+@lru_cache(maxsize=None)
+def adapter(tp: Any) -> TypeAdapter[Any]:
+    """A cached pydantic validator for `tp`."""
+    return TypeAdapter(tp)
+
+
+def encode(value: Any) -> Any:
+    """Make a value JSON-ready. Drops `NOT_GIVEN` entries and keeps `None`, which is sent as null."""
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json", by_alias=True, exclude_unset=True)
+    if isinstance(value, Mapping):
+        return {k: encode(v) for k, v in value.items() if not isinstance(v, NotGiven)}
+    if isinstance(value, (list, tuple)):
+        return [encode(v) for v in value]
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
+def encode_query(params: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    """Query values can't be null, so `None` and `NOT_GIVEN` are both left out."""
+    out: Dict[str, Any] = {}
+    for key, value in (params or {}).items():
+        if value is None or isinstance(value, NotGiven):
+            continue
+        if isinstance(value, bool):
+            value = "true" if value else "false"
+        out[key] = encode(value)
+    return out
+
+
+def encode_headers(headers: Optional[Mapping[str, Any]]) -> Dict[str, str]:
+    return {
+        key: str(encode(value))
+        for key, value in (headers or {}).items()
+        if value is not None and not isinstance(value, NotGiven)
+    }
+
+
+def encode_form(data: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    """Form and multipart fields: `None` and `NOT_GIVEN` are left out."""
+    return {
+        key: encode(value)
+        for key, value in (data or {}).items()
+        if value is not None and not isinstance(value, NotGiven)
+    }
+
+
+def read_file(file: Any) -> Tuple[str, bytes]:
+    """Read an upload fully, so a retry can send it again."""
+    if isinstance(file, bytes):
+        return "upload", file
+    if isinstance(file, (str, os.PathLike)):
+        path = Path(file)
+        return path.name, path.read_bytes()
+    name = os.path.basename(str(getattr(file, "name", ""))) or "upload"
+    return name, file.read()
+
+
+_warned: Set[str] = set()
+
+
+def warn_deprecated(message: str) -> None:
+    """Warn the first time a deprecated method is called."""
+    if message not in _warned:
+        _warned.add(message)
+        warnings.warn(message, DeprecationWarning, stacklevel=3)

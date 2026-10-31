@@ -1,9 +1,23 @@
 {% for r in c.resources | sort(attribute="module") %}
+{% if r.raw_class %}
+from .{{ r.module }} import (
+    {{ r.async_class }},
+    {{ r.async_raw_class }},
+    {{ r.class }},
+    {{ r.raw_class }},
+)
+{% else %}
 from .{{ r.module }} import {{ r.class }}
+{% endif %}
 {% endfor %}
 
 __all__ = [
-{% for r in c.resources | sort(attribute="class") %}
+{% for r in c.resources %}
     "{{ r.class }}",
+{% if r.raw_class %}
+    "{{ r.raw_class }}",
+    "{{ r.async_class }}",
+    "{{ r.async_raw_class }}",
+{% endif %}
 {% endfor %}
 ]

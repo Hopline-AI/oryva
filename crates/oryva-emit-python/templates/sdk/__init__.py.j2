@@ -1,33 +1,51 @@
 """{{ c.summary }}"""
 
-from ._client import {{ c.class }}
+from ._client import {{ c.async_class }}, {{ c.class }}
 from ._errors import (
     APIConnectionError,
     APIError,
     APITimeoutError,
     AuthenticationError,
     BadRequestError,
+    ConflictError,
     InternalServerError,
     NotFoundError,
     PermissionDeniedError,
     RateLimitError,
     {{ c.error_base }},
     UnprocessableEntityError,
+    WebhookVerificationError,
 )
+from ._base import RequestOptions
+from ._pagination import AsyncPage, SyncPage
+from ._response import APIResponse
+from ._streaming import AsyncStream, Stream
+from ._utils import NOT_GIVEN, NotGiven
 from ._version import __version__
 
 __all__ = [
     "APIConnectionError",
     "APIError",
+    "APIResponse",
     "APITimeoutError",
+    "{{ c.async_class }}",
+    "AsyncPage",
+    "AsyncStream",
     "AuthenticationError",
     "BadRequestError",
+    "ConflictError",
     "InternalServerError",
+    "NOT_GIVEN",
     "NotFoundError",
+    "NotGiven",
     "PermissionDeniedError",
     "RateLimitError",
+    "RequestOptions",
+    "Stream",
+    "SyncPage",
     "{{ c.class }}",
     "{{ c.error_base }}",
     "UnprocessableEntityError",
+    "WebhookVerificationError",
     "__version__",
 ]

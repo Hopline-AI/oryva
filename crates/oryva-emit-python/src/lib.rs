@@ -15,9 +15,9 @@ use oryva_ir::Api;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
-    /// Import name, e.g. `sarvam`.
+    /// Import name, e.g. `ledger`.
     pub package: String,
-    /// Name on PyPI, e.g. `sarvam`.
+    /// Name on PyPI, e.g. `ledger`.
     pub dist_name: String,
     pub version: String,
 }
@@ -27,8 +27,21 @@ impl Options {
         Options {
             package: api.name.clone(),
             dist_name: api.name.replace('_', "-"),
-            version: api.version.clone(),
+            version: pep440(&api.version),
         }
+    }
+}
+
+/// Date versions such as `2026-10-01` aren't valid for PyPI; write them `2026.10.01`.
+fn pep440(version: &str) -> String {
+    let parts: Vec<&str> = version.split('-').collect();
+    let is_date = parts.len() == 3
+        && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit()))
+        && parts[0].len() == 4;
+    if is_date {
+        parts.join(".")
+    } else {
+        version.to_string()
     }
 }
 
@@ -50,7 +63,7 @@ impl fmt::Display for Error {
                 "`ruff` was not found on PATH; it formats the generated Python. \
                  Install it (`brew install ruff` or `pip install ruff`) and run again"
             ),
-            Error::Ruff(msg) => write!(f, "`ruff format` failed:\n{msg}"),
+            Error::Ruff(msg) => write!(f, "`ruff` failed:\n{msg}"),
         }
     }
 }
@@ -81,10 +94,17 @@ const TEMPLATES: &[(&str, &str)] = templates![
     "sdk/__init__.py",
     "sdk/_version.py",
     "sdk/_client.py",
+    "sdk/_base.py",
+    "sdk/_auth.py",
     "sdk/_errors.py",
+    "sdk/_utils.py",
+    "sdk/_pagination.py",
+    "sdk/_streaming.py",
+    "sdk/_response.py",
     "sdk/types.py",
     "sdk/resources/__init__.py",
     "sdk/resources/resource.py",
+    "sdk/resources/webhooks.py",
     "mcp/pyproject.toml",
     "mcp/README.md",
     "mcp/__init__.py",
@@ -131,8 +151,32 @@ pub fn emit_sdk(api: &Api, opts: &Options, out: &Path) -> Result<Vec<PathBuf>, E
             render("sdk/_client.py", context!(c))?,
         ),
         (
+            format!("{src}/_base.py"),
+            render("sdk/_base.py", context!(c))?,
+        ),
+        (
+            format!("{src}/_auth.py"),
+            render("sdk/_auth.py", context!(c))?,
+        ),
+        (
             format!("{src}/_errors.py"),
             render("sdk/_errors.py", context!(c))?,
+        ),
+        (
+            format!("{src}/_utils.py"),
+            render("sdk/_utils.py", context!(c))?,
+        ),
+        (
+            format!("{src}/_pagination.py"),
+            render("sdk/_pagination.py", context!(c))?,
+        ),
+        (
+            format!("{src}/_streaming.py"),
+            render("sdk/_streaming.py", context!(c))?,
+        ),
+        (
+            format!("{src}/_response.py"),
+            render("sdk/_response.py", context!(c))?,
         ),
         (format!("{src}/py.typed"), String::new()),
         (
@@ -149,8 +193,14 @@ pub fn emit_sdk(api: &Api, opts: &Options, out: &Path) -> Result<Vec<PathBuf>, E
             format!("{src}/resources/{}.py", r.name),
             render(
                 "sdk/resources/resource.py",
-                context!(r => sdk::resource_ctx(api, r)),
+                context!(c, r => sdk::resource_ctx(api, r)),
             )?,
+        ));
+    }
+    if c.has_webhooks {
+        files.push((
+            format!("{src}/resources/webhooks.py"),
+            render("sdk/resources/webhooks.py", context!(c))?,
         ));
     }
     write_all(out, files)
@@ -188,18 +238,33 @@ fn write_all(out: &Path, files: Vec<(String, String)>) -> Result<Vec<PathBuf>, E
         .iter()
         .filter(|p| p.extension().is_some_and(|e| e == "py"))
         .collect();
-    let output = Command::new("ruff")
-        .args(["format", "--no-cache"])
-        .args(&python)
-        .output()
-        .map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => Error::RuffMissing,
-            _ => Error::Io(e),
-        })?;
-    if !output.status.success() {
-        return Err(Error::Ruff(
-            String::from_utf8_lossy(&output.stderr).into_owned(),
-        ));
+    // Templates list the imports they might need; ruff sorts them and drops the unused ones.
+    for args in [
+        &[
+            "check",
+            "--no-cache",
+            "--quiet",
+            "--select",
+            "I,F401",
+            "--fix",
+        ][..],
+        &["format", "--no-cache"][..],
+    ] {
+        let output = Command::new("ruff")
+            .args(args)
+            .args(&python)
+            .output()
+            .map_err(|e| match e.kind() {
+                std::io::ErrorKind::NotFound => Error::RuffMissing,
+                _ => Error::Io(e),
+            })?;
+        if !output.status.success() {
+            return Err(Error::Ruff(format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
     }
     Ok(paths)
 }

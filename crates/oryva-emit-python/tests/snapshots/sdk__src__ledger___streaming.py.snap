@@ -1,0 +1,142 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+"""Server-sent events."""
+
+from __future__ import annotations
+
+import json
+from types import TracebackType
+from typing import (
+    Any,
+    AsyncIterator,
+    Generic,
+    Iterator,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+)
+
+import httpx
+
+from ._utils import adapter
+
+T = TypeVar("T")
+
+
+class _EventParser:
+    """Turns SSE lines into `(event, data)` pairs.
+
+    Comment lines, `id` and `retry` fields, and fields it doesn't know are ignored.
+    """
+
+    def __init__(self) -> None:
+        self._event = ""
+        self._data: List[str] = []
+
+    def feed(self, line: str) -> Optional[Tuple[str, str]]:
+        if line == "":
+            event, data = self._event, self._data
+            self._event, self._data = "", []
+            return (event or "message", "\n".join(data)) if data else None
+        if line.startswith(":"):
+            return None
+        field, _, value = line.partition(":")
+        value = value.removeprefix(" ")
+        if field == "event":
+            self._event = value
+        elif field == "data":
+            self._data.append(value)
+        return None
+
+
+def _decode(data: str) -> Tuple[bool, Any]:
+    """Event data is JSON. Anything else (a keep-alive, a `[DONE]` marker) is skipped."""
+    try:
+        return True, json.loads(data)
+    except ValueError:
+        return False, None
+
+
+class Stream(Generic[T]):
+    """Typed events from a server-sent event response.
+
+    Iterate it, and close it when you stop early, or use it as a context manager:
+
+        with client.events.stream() as stream:
+            for event in stream:
+                ...
+    """
+
+    def __init__(self, *, cast_to: Any, response: httpx.Response) -> None:
+        self._cast_to = cast_to
+        self.response = response
+
+    def __iter__(self) -> Iterator[T]:
+        parser = _EventParser()
+        validate = adapter(self._cast_to).validate_python
+        try:
+            for line in self.response.iter_lines():
+                event = parser.feed(line)
+                if event is None:
+                    continue
+                ok, payload = _decode(event[1])
+                if ok:
+                    yield validate(payload)
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        """Stop reading and release the connection."""
+        self.response.close()
+
+    def __enter__(self) -> Stream[T]:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> None:
+        self.close()
+
+
+class AsyncStream(Generic[T]):
+    """Like `Stream`, for `async for` and `async with`."""
+
+    def __init__(self, *, cast_to: Any, response: httpx.Response) -> None:
+        self._cast_to = cast_to
+        self.response = response
+
+    async def __aiter__(self) -> AsyncIterator[T]:
+        parser = _EventParser()
+        validate = adapter(self._cast_to).validate_python
+        try:
+            async for line in self.response.aiter_lines():
+                event = parser.feed(line)
+                if event is None:
+                    continue
+                ok, payload = _decode(event[1])
+                if ok:
+                    yield validate(payload)
+        finally:
+            await self.close()
+
+    async def close(self) -> None:
+        """Stop reading and release the connection."""
+        await self.response.aclose()
+
+    async def __aenter__(self) -> AsyncStream[T]:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> None:
+        await self.close()

@@ -24,7 +24,10 @@ _output_dir: Optional[Path] = None
 
 
 def _sdk() -> {{ c.class }}:
-    """Create the SDK client on first use so the server starts without credentials."""
+    """Create the SDK client on first use so the server starts without credentials.
+
+    The SDK reads its credentials, environment and base URL from environment variables.
+    """
     global _client
     if _client is None:
         _client = {{ c.class }}()
@@ -40,6 +43,12 @@ def _tool_errors() -> Iterator[None]:
         raise ToolError(str(exc)) from exc
 
 
+def _given(**kwargs: Any) -> Dict[str, Any]:
+    """The arguments the caller passed. A tool can't tell an omitted argument from null, and
+    the SDK would send None as null, so None is left out."""
+    return {k: v for k, v in kwargs.items() if v is not None}
+
+
 def _jsonable(value: Any) -> Any:
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json", exclude_none=True)
@@ -52,6 +61,13 @@ def _jsonable(value: Any) -> Any:
 
 def _to_json(value: Any) -> str:
     return json.dumps(_jsonable(value), indent=2, ensure_ascii=False)
+{% if c.has_pages %}
+
+
+def _page_json(page: Any) -> str:
+    """One page, plus the arguments that fetch the next one (null on the last page)."""
+    return _to_json({**_jsonable(page.response), "next_page": page.next_page_info()})
+{% endif %}
 {% if c.has_binary %}
 
 

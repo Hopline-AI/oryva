@@ -2,41 +2,85 @@
 source: crates/oryva-emit-python/tests/generate.rs
 expression: content
 ---
-# sarvam
+# ledger
 
-Speech, text and translation models for Indian languages.
+Customers, invoices, payments and refunds for small businesses.
 
 ## Install
 
 ```sh
-pip install sarvam
+pip install ledger
 ```
 
 Requires Python 3.9 or newer.
 
 ## Usage
 
-Set your API key in the environment (`export SARVAM_API_KEY=...`) or pass `api_key=` to the client.
+```python
+from ledger import Ledger
+
+client = Ledger()
+for item in client.customers.list():
+    print(item)
+```
+
+Every method takes keyword arguments and returns typed `pydantic` models. `AsyncLedger` has the
+same methods as coroutines.
+
+## Authentication and environments
+
+The client uses the first scheme whose credentials you pass or set in the environment:
+
+- `api_key=`: Bearer token. Falls back to `LEDGER_API_KEY`.
+- `client_id=`: OAuth2 client ID. Falls back to `LEDGER_CLIENT_ID`.
+- `client_secret=`: OAuth2 client secret. Falls back to `LEDGER_CLIENT_SECRET`.
+- `token_url=`: OAuth2 token endpoint. Defaults to https://auth.ledger.example/oauth/token. Falls back to `LEDGER_OAUTH_TOKEN_URL`.
+
+Pick a named environment with `Ledger(environment="sandbox")`:
+`production` (https://api.ledger.example), `sandbox` (https://sandbox.ledger.example). Pass `base_url=` or set `LEDGER_BASE_URL` to use another host.
+
+## Requests
+
+Failures that can succeed on a second try (408, 409, 429, 5xx, dropped connections) are retried
+with exponential backoff, honouring `Retry-After`; `max_retries=2` by default. Errors are
+`ledger.APIError` subclasses whose message says how to fix the problem.
+
+Every method accepts per-request options as keyword arguments:
 
 ```python
-from sarvam import Sarvam
-
-client = Sarvam()
-result = client.text.translate(
-    input="...",
-    source_language_code="en-IN",
-    target_language_code="en-IN",
+client.customers.list(
+    timeout=10, max_retries=0, extra_headers={"X-Debug": "1"}, extra_query={"a": "b"}, extra_body={"c": "d"},
 )
-print(result)
 ```
 
-Every method takes keyword arguments and returns a typed `pydantic` model. The client retries
-rate limits, server errors and dropped connections (`max_retries=2` by default) and raises
-`sarvam.APIError` subclasses with a message that says how to fix the problem.
+Leave an optional argument out to send nothing; pass `None` to send `null`. Unknown enum values
+and union variants are kept rather than rejected.
+
+Every non-GET request gets a fresh `Idempotency-Key`, reused by its retries. Pass
+`idempotency_key="..."` to choose your own.
+
+`client.with_raw_response.<resource>.<method>(...)` returns the status, headers and parsed body:
 
 ```python
-with Sarvam(timeout=30, max_retries=4) as client:
-    ...
+response = client.with_raw_response.customers.list()
+print(response.status_code, response.headers["x-request-id"], response.parsed)
 ```
 
-Set `SARVAM_BASE_URL` or pass `base_url=` to point the client somewhere else.
+Set `LEDGER_LOG=debug` to log requests, with credentials redacted.
+
+## Pagination, streaming and files
+
+List methods return a page. Iterate it to walk every item, or use `page.items`,
+`page.has_next_page()` and `page.next_page()`.
+
+Event-stream methods return a stream; close it early with `with` or `.close()`. Downloads return
+`bytes`; the `*_to_file(dest, ...)` variant streams them to disk. Uploads take bytes, a path or an
+open file.
+
+## Webhooks
+
+```python
+event = client.webhooks.unwrap(request_body, request_headers)  # raises WebhookVerificationError
+```
+
+The secret comes from `webhook_secret=` or `LEDGER_WEBHOOK_SECRET`.

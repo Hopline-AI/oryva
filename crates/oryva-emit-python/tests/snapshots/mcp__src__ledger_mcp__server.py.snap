@@ -1,0 +1,565 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+"""MCP server exposing the Ledger API as tools."""
+
+from __future__ import annotations
+
+import json
+import mimetypes
+import os
+import tempfile
+from contextlib import contextmanager
+from datetime import date
+from pathlib import Path
+from typing import Annotated, Any, Dict, Iterator, List, Literal, Optional, Union
+
+from ledger import Ledger, LedgerError
+from ledger.types import Currency, LineItem
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp_types import ToolAnnotations
+from pydantic import BaseModel, Field
+
+server = MCPServer(
+    "ledger",
+    instructions="Customers, invoices, payments and refunds for small businesses.",
+)
+
+_client: Optional[Ledger] = None
+_output_dir: Optional[Path] = None
+
+
+def _sdk() -> Ledger:
+    """Create the SDK client on first use so the server starts without credentials.
+
+    The SDK reads its credentials, environment and base URL from environment variables.
+    """
+    global _client
+    if _client is None:
+        _client = Ledger()
+    return _client
+
+
+@contextmanager
+def _tool_errors() -> Iterator[None]:
+    """Report SDK errors as tool errors that carry the SDK's own message."""
+    try:
+        yield
+    except LedgerError as exc:
+        raise ToolError(str(exc)) from exc
+
+
+def _given(**kwargs: Any) -> Dict[str, Any]:
+    """The arguments the caller passed. A tool can't tell an omitted argument from null, and
+    the SDK would send None as null, so None is left out."""
+    return {k: v for k, v in kwargs.items() if v is not None}
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json", exclude_none=True)
+    if isinstance(value, list):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    return value
+
+
+def _to_json(value: Any) -> str:
+    return json.dumps(_jsonable(value), indent=2, ensure_ascii=False)
+
+
+def _page_json(page: Any) -> str:
+    """One page, plus the arguments that fetch the next one (null on the last page)."""
+    return _to_json({**_jsonable(page.response), "next_page": page.next_page_info()})
+
+
+def _save_binary(data: bytes, name: str, content_type: str) -> str:
+    """Write a binary response to disk and return its path and size, never the bytes."""
+    global _output_dir
+    if _output_dir is None:
+        configured = os.environ.get("LEDGER_MCP_OUTPUT_DIR")
+        _output_dir = (
+            Path(configured)
+            if configured
+            else Path(tempfile.mkdtemp(prefix="ledger_mcp-"))
+        )
+        _output_dir.mkdir(parents=True, exist_ok=True)
+    extension = mimetypes.guess_extension(content_type.split(";")[0].strip()) or ".bin"
+    handle, path = tempfile.mkstemp(
+        prefix=f"{name}-", suffix=extension, dir=_output_dir
+    )
+    with os.fdopen(handle, "wb") as f:
+        f.write(data)
+    return _to_json(
+        {"path": path, "size_bytes": len(data), "content_type": content_type}
+    )
+
+
+@server.tool(
+    name="customers_list",
+    title="List customers, newest first",
+    annotations=ToolAnnotations(
+        title="List customers, newest first",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def customers_list(
+    limit: Annotated[
+        Optional[int], Field(description="Maximum items per page (at most 100).")
+    ] = None,
+    starting_after: Annotated[
+        Optional[str],
+        Field(description="Cursor from the previous page's `next_cursor`."),
+    ] = None,
+    email: Annotated[
+        Optional[str], Field(description="Only customers with exactly this email.")
+    ] = None,
+) -> str:
+    """List customers, newest first.
+
+    Returns one page of results. When `next_page` in the result is not null, call this tool again with those arguments added to get the next page.
+    """
+    with _tool_errors():
+        result = _sdk().customers.list(
+            **_given(limit=limit, starting_after=starting_after, email=email)
+        )
+    return _page_json(result)
+
+
+@server.tool(
+    name="customers_create",
+    title="Create a customer",
+    annotations=ToolAnnotations(
+        title="Create a customer",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    structured_output=False,
+)
+def customers_create(
+    name: str,
+    email: Optional[str] = None,
+    metadata: Annotated[
+        Optional[Dict[str, str]], Field(description="Your own key-value pairs.")
+    ] = None,
+) -> str:
+    """Create a customer."""
+    with _tool_errors():
+        result = _sdk().customers.create(
+            name=name, **_given(email=email, metadata=metadata)
+        )
+    return _to_json(result)
+
+
+@server.tool(
+    name="customers_search",
+    title="Search customers by name",
+    annotations=ToolAnnotations(
+        title="Search customers by name",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def customers_search(
+    q: str,
+) -> str:
+    """Search customers by name.
+
+    Use `customers.list` with `email` instead.
+
+    Deprecated: this operation may be removed.
+    """
+    with _tool_errors():
+        result = _sdk().customers.search(q=q)
+    return _to_json(result)
+
+
+@server.tool(
+    name="customers_get",
+    title="Fetch one customer",
+    annotations=ToolAnnotations(
+        title="Fetch one customer",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def customers_get(
+    customer_id: str,
+) -> str:
+    """Fetch one customer."""
+    with _tool_errors():
+        result = _sdk().customers.get(customer_id=customer_id)
+    return _to_json(result)
+
+
+@server.tool(
+    name="customers_update",
+    title="Change a customer's name, email or metadata",
+    annotations=ToolAnnotations(
+        title="Change a customer's name, email or metadata",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    structured_output=False,
+)
+def customers_update(
+    customer_id: str,
+    name: Optional[str] = None,
+    email: Annotated[
+        Optional[str], Field(description="Send null to remove the email.")
+    ] = None,
+    metadata: Annotated[
+        Optional[Dict[str, str]], Field(description="Your own key-value pairs.")
+    ] = None,
+) -> str:
+    """Change a customer's name, email or metadata."""
+    with _tool_errors():
+        result = _sdk().customers.update(
+            customer_id=customer_id, **_given(name=name, email=email, metadata=metadata)
+        )
+    return _to_json(result)
+
+
+@server.tool(
+    name="customers_delete",
+    title="Delete a customer and all their unpaid invoices",
+    annotations=ToolAnnotations(
+        title="Delete a customer and all their unpaid invoices",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def customers_delete(
+    customer_id: str,
+) -> str:
+    """Delete a customer and all their unpaid invoices.
+
+    Permanent, and also deletes the customer's draft and open invoices. Fetch the customer first and confirm with the user.
+    """
+    with _tool_errors():
+        _sdk().customers.delete(customer_id=customer_id)
+    return "Done. The API returned no content."
+
+
+@server.tool(
+    name="invoices_list",
+    title="List invoices",
+    annotations=ToolAnnotations(
+        title="List invoices",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def invoices_list(
+    limit: Annotated[
+        Optional[int], Field(description="Maximum items per page (at most 100).")
+    ] = None,
+    offset: Optional[int] = None,
+    status: Optional[Union[Literal["draft", "open", "paid", "void"], str]] = None,
+) -> str:
+    """List invoices.
+
+    Returns one page of results. When `next_page` in the result is not null, call this tool again with those arguments added to get the next page.
+    """
+    with _tool_errors():
+        result = _sdk().invoices.list(
+            **_given(limit=limit, offset=offset, status=status)
+        )
+    return _page_json(result)
+
+
+@server.tool(
+    name="invoices_create",
+    title="Create a draft invoice",
+    annotations=ToolAnnotations(
+        title="Create a draft invoice",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    structured_output=False,
+)
+def invoices_create(
+    customer_id: str,
+    line_items: List[LineItem],
+    currency: Optional[Currency] = None,
+    due_date: Optional[date] = None,
+) -> str:
+    """Create a draft invoice."""
+    with _tool_errors():
+        result = _sdk().invoices.create(
+            customer_id=customer_id,
+            line_items=line_items,
+            **_given(currency=currency, due_date=due_date),
+        )
+    return _to_json(result)
+
+
+@server.tool(
+    name="invoices_get",
+    title="Fetch one invoice",
+    annotations=ToolAnnotations(
+        title="Fetch one invoice",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def invoices_get(
+    invoice_id: str,
+) -> str:
+    """Fetch one invoice."""
+    with _tool_errors():
+        result = _sdk().invoices.get(invoice_id=invoice_id)
+    return _to_json(result)
+
+
+@server.tool(
+    name="invoices_finalize",
+    title="Turn a draft invoice into an open one and email it to the customer",
+    annotations=ToolAnnotations(
+        title="Turn a draft invoice into an open one and email it to the customer",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    structured_output=False,
+)
+def invoices_finalize(
+    invoice_id: str,
+) -> str:
+    """Turn a draft invoice into an open one and email it to the customer.
+
+    Emails the customer immediately; this can't be undone.
+    """
+    with _tool_errors():
+        result = _sdk().invoices.finalize(invoice_id=invoice_id)
+    return _to_json(result)
+
+
+@server.tool(
+    name="invoices_void",
+    title="Void an open invoice so it can no longer be paid",
+    annotations=ToolAnnotations(
+        title="Void an open invoice so it can no longer be paid",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def invoices_void(
+    invoice_id: str,
+) -> str:
+    """Void an open invoice so it can no longer be paid.
+
+    Permanent. Only open invoices can be voided.
+    """
+    with _tool_errors():
+        result = _sdk().invoices.void(invoice_id=invoice_id)
+    return _to_json(result)
+
+
+@server.tool(
+    name="invoices_download_pdf",
+    title="Download the invoice as a PDF",
+    annotations=ToolAnnotations(
+        title="Download the invoice as a PDF",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def invoices_download_pdf(
+    invoice_id: str,
+) -> str:
+    """Download the invoice as a PDF.
+
+    The response is binary (application/pdf). It is saved to a file; the result gives its path and size.
+    """
+    with _tool_errors():
+        result = _sdk().invoices.download_pdf(invoice_id=invoice_id)
+    return _save_binary(result, "invoices_download_pdf", "application/pdf")
+
+
+@server.tool(
+    name="payments_list",
+    title="List payments",
+    annotations=ToolAnnotations(
+        title="List payments",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def payments_list(
+    page: Optional[int] = None,
+    invoice_id: Optional[str] = None,
+) -> str:
+    """List payments.
+
+    Returns one page of results. When `next_page` in the result is not null, call this tool again with those arguments added to get the next page.
+    """
+    with _tool_errors():
+        result = _sdk().payments.list(**_given(page=page, invoice_id=invoice_id))
+    return _page_json(result)
+
+
+@server.tool(
+    name="payments_get",
+    title="Fetch one payment",
+    annotations=ToolAnnotations(
+        title="Fetch one payment",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def payments_get(
+    payment_id: str,
+) -> str:
+    """Fetch one payment."""
+    with _tool_errors():
+        result = _sdk().payments.get(payment_id=payment_id)
+    return _to_json(result)
+
+
+@server.tool(
+    name="refunds_create",
+    title="Refund all or part of a payment",
+    annotations=ToolAnnotations(
+        title="Refund all or part of a payment",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+    ),
+    structured_output=False,
+)
+def refunds_create(
+    payment_id: str,
+    amount: Annotated[
+        Optional[int],
+        Field(
+            description="Smallest currency unit. Omit to refund the full remaining amount."
+        ),
+    ] = None,
+    reason: Optional[
+        Union[Literal["duplicate", "fraudulent", "requested_by_customer"], str]
+    ] = None,
+) -> str:
+    """Refund all or part of a payment.
+
+    Moves money back to the customer and can't be reversed. Check the payment's amount first; a refund can't exceed what's left to refund.
+    """
+    with _tool_errors():
+        result = _sdk().refunds.create(
+            payment_id=payment_id, **_given(amount=amount, reason=reason)
+        )
+    return _to_json(result)
+
+
+@server.tool(
+    name="files_upload",
+    title="Upload a file, such as a receipt, as a multipart form",
+    annotations=ToolAnnotations(
+        title="Upload a file, such as a receipt, as a multipart form",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    structured_output=False,
+)
+def files_upload(
+    file: Annotated[
+        str, Field(description="Path of a file on the machine running this server.")
+    ],
+    purpose: Optional[Union[Literal["receipt", "contract"], str]] = None,
+) -> str:
+    """Upload a file, such as a receipt, as a multipart form."""
+    with _tool_errors():
+        result = _sdk().files.upload(file=file, **_given(purpose=purpose))
+    return _to_json(result)
+
+
+@server.tool(
+    name="files_upload_raw",
+    title="Upload a file as the raw request body",
+    annotations=ToolAnnotations(
+        title="Upload a file as the raw request body",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    structured_output=False,
+)
+def files_upload_raw(
+    filename: str,
+    file: Annotated[
+        str, Field(description="Path of a file on the machine running this server.")
+    ],
+) -> str:
+    """Upload a file as the raw request body."""
+    with _tool_errors():
+        result = _sdk().files.upload_raw(filename=filename, file=file)
+    return _to_json(result)
+
+
+@server.tool(
+    name="events_stream",
+    title="Stream account events as they happen",
+    annotations=ToolAnnotations(
+        title="Stream account events as they happen",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    structured_output=False,
+)
+def events_stream(
+    max_events: Annotated[
+        int, Field(ge=1, description="Stop after this many events.")
+    ] = 10,
+) -> str:
+    """Stream account events as they happen.
+
+    Long-lived. Read a few events and stop; don't wait for the stream to end.
+
+    Reads up to `max_events` events, then closes the stream and returns them.
+    """
+    with _tool_errors():
+        events: List[Any] = []
+        with _sdk().events.stream() as stream:
+            for event in stream:
+                events.append(event)
+                if len(events) >= max_events:
+                    break
+    return _to_json({"events": events, "count": len(events)})
+
+
+def main() -> None:
+    """Run the server over stdio."""
+    server.run()
+
+
+if __name__ == "__main__":
+    main()

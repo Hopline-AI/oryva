@@ -1,0 +1,613 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Dict, List, Optional
+from urllib.parse import quote
+
+from typing_extensions import Unpack
+
+from .._base import RequestOptions
+from .._pagination import AsyncPage, Cursor, SyncPage
+from .._response import APIResponse
+from .._utils import NOT_GIVEN, NotGiven, warn_deprecated
+from ..types import Customer, CustomersListResponse
+
+if TYPE_CHECKING:
+    from .._client import AsyncLedger, Ledger
+
+
+class Customers:
+    """People and companies you bill."""
+
+    def __init__(self, client: Ledger) -> None:
+        self._client = client
+
+    def list(
+        self,
+        *,
+        limit: int | NotGiven = NOT_GIVEN,
+        starting_after: str | NotGiven = NOT_GIVEN,
+        email: str | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> SyncPage[Customer]:
+        """List customers, newest first.
+
+        Args:
+            limit: Maximum items per page (at most 100). Defaults to 20.
+            starting_after: Cursor from the previous page's `next_cursor`.
+            email: Only customers with exactly this email.
+
+        Raises:
+            RateLimitError: Too many requests; retry after the number of seconds in Retry-After.
+
+        Returns one page. Iterate it to walk every item across pages.
+        """
+        return self._client._paginate(
+            "GET",
+            "/customers",
+            paging=Cursor(
+                param="starting_after", next_cursor=("next_cursor",), items=("data",)
+            ),
+            item_type=Customer,
+            response_type=CustomersListResponse,
+            params={"limit": limit, "starting_after": starting_after, "email": email},
+            options=options,
+        )
+
+    def create(
+        self,
+        *,
+        name: str,
+        email: Optional[str] | NotGiven = NOT_GIVEN,
+        metadata: Dict[str, str] | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> Customer:
+        """Create a customer.
+
+        Args:
+            metadata: Your own key-value pairs.
+
+        Raises:
+            BadRequestError: The request was invalid; `error.param` names the field.
+            ConflictError: The idempotency key was reused with a different request body.
+        """
+        return self._client._request(
+            "POST",
+            "/customers",
+            cast_to=Customer,
+            json={"name": name, "email": email, "metadata": metadata},
+            options=options,
+        )
+
+    def search(
+        self,
+        *,
+        q: str,
+        **options: Unpack[RequestOptions],
+    ) -> List[Customer]:
+        """Search customers by name.
+
+        Use `customers.list` with `email` instead.
+
+        Deprecated: this operation may be removed.
+        """
+        warn_deprecated(
+            "customers.search() is deprecated: Use `customers.list` with `email` instead."
+        )
+        return self._client._request(
+            "GET",
+            "/customers/search",
+            cast_to=List[Customer],
+            params={"q": q},
+            options=options,
+        )
+
+    def get(
+        self,
+        *,
+        customer_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> Customer:
+        """Fetch one customer.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/customers/{quote(customer_id, safe='')}"
+        return self._client._request("GET", path, cast_to=Customer, options=options)
+
+    def update(
+        self,
+        *,
+        customer_id: str,
+        name: str | NotGiven = NOT_GIVEN,
+        email: Optional[str] | NotGiven = NOT_GIVEN,
+        metadata: Dict[str, str] | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> Customer:
+        """Change a customer's name, email or metadata.
+
+        Args:
+            email: Send null to remove the email.
+            metadata: Your own key-value pairs.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/customers/{quote(customer_id, safe='')}"
+        return self._client._request(
+            "PATCH",
+            path,
+            cast_to=Customer,
+            json={"name": name, "email": email, "metadata": metadata},
+            options=options,
+        )
+
+    def delete(
+        self,
+        *,
+        customer_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> None:
+        """Delete a customer and all their unpaid invoices.
+
+        Permanent, and also deletes the customer's draft and open invoices. Fetch the customer first and confirm with the user.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/customers/{quote(customer_id, safe='')}"
+        self._client._request("DELETE", path, cast_to=None, options=options)
+
+
+class CustomersWithRawResponse:
+    """`Customers` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: Ledger) -> None:
+        self._client = client
+
+    def list(
+        self,
+        *,
+        limit: int | NotGiven = NOT_GIVEN,
+        starting_after: str | NotGiven = NOT_GIVEN,
+        email: str | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[SyncPage[Customer]]:
+        """List customers, newest first.
+
+        Args:
+            limit: Maximum items per page (at most 100). Defaults to 20.
+            starting_after: Cursor from the previous page's `next_cursor`.
+            email: Only customers with exactly this email.
+
+        Raises:
+            RateLimitError: Too many requests; retry after the number of seconds in Retry-After.
+
+        Returns one page. Iterate it to walk every item across pages.
+        """
+        return self._client._paginate(
+            "GET",
+            "/customers",
+            paging=Cursor(
+                param="starting_after", next_cursor=("next_cursor",), items=("data",)
+            ),
+            item_type=Customer,
+            response_type=CustomersListResponse,
+            params={"limit": limit, "starting_after": starting_after, "email": email},
+            options=options,
+            raw=True,
+        )
+
+    def create(
+        self,
+        *,
+        name: str,
+        email: Optional[str] | NotGiven = NOT_GIVEN,
+        metadata: Dict[str, str] | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Customer]:
+        """Create a customer.
+
+        Args:
+            metadata: Your own key-value pairs.
+
+        Raises:
+            BadRequestError: The request was invalid; `error.param` names the field.
+            ConflictError: The idempotency key was reused with a different request body.
+        """
+        return self._client._request(
+            "POST",
+            "/customers",
+            cast_to=Customer,
+            json={"name": name, "email": email, "metadata": metadata},
+            options=options,
+            raw=True,
+        )
+
+    def search(
+        self,
+        *,
+        q: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[List[Customer]]:
+        """Search customers by name.
+
+        Use `customers.list` with `email` instead.
+
+        Deprecated: this operation may be removed.
+        """
+        warn_deprecated(
+            "customers.search() is deprecated: Use `customers.list` with `email` instead."
+        )
+        return self._client._request(
+            "GET",
+            "/customers/search",
+            cast_to=List[Customer],
+            params={"q": q},
+            options=options,
+            raw=True,
+        )
+
+    def get(
+        self,
+        *,
+        customer_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Customer]:
+        """Fetch one customer.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/customers/{quote(customer_id, safe='')}"
+        return self._client._request(
+            "GET", path, cast_to=Customer, options=options, raw=True
+        )
+
+    def update(
+        self,
+        *,
+        customer_id: str,
+        name: str | NotGiven = NOT_GIVEN,
+        email: Optional[str] | NotGiven = NOT_GIVEN,
+        metadata: Dict[str, str] | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Customer]:
+        """Change a customer's name, email or metadata.
+
+        Args:
+            email: Send null to remove the email.
+            metadata: Your own key-value pairs.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/customers/{quote(customer_id, safe='')}"
+        return self._client._request(
+            "PATCH",
+            path,
+            cast_to=Customer,
+            json={"name": name, "email": email, "metadata": metadata},
+            options=options,
+            raw=True,
+        )
+
+    def delete(
+        self,
+        *,
+        customer_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[None]:
+        """Delete a customer and all their unpaid invoices.
+
+        Permanent, and also deletes the customer's draft and open invoices. Fetch the customer first and confirm with the user.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/customers/{quote(customer_id, safe='')}"
+        return self._client._request(
+            "DELETE", path, cast_to=None, options=options, raw=True
+        )
+
+
+class AsyncCustomers:
+    """People and companies you bill."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self._client = client
+
+    async def list(
+        self,
+        *,
+        limit: int | NotGiven = NOT_GIVEN,
+        starting_after: str | NotGiven = NOT_GIVEN,
+        email: str | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> AsyncPage[Customer]:
+        """List customers, newest first.
+
+        Args:
+            limit: Maximum items per page (at most 100). Defaults to 20.
+            starting_after: Cursor from the previous page's `next_cursor`.
+            email: Only customers with exactly this email.
+
+        Raises:
+            RateLimitError: Too many requests; retry after the number of seconds in Retry-After.
+
+        Returns one page. Iterate it to walk every item across pages.
+        """
+        return await self._client._paginate(
+            "GET",
+            "/customers",
+            paging=Cursor(
+                param="starting_after", next_cursor=("next_cursor",), items=("data",)
+            ),
+            item_type=Customer,
+            response_type=CustomersListResponse,
+            params={"limit": limit, "starting_after": starting_after, "email": email},
+            options=options,
+        )
+
+    async def create(
+        self,
+        *,
+        name: str,
+        email: Optional[str] | NotGiven = NOT_GIVEN,
+        metadata: Dict[str, str] | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> Customer:
+        """Create a customer.
+
+        Args:
+            metadata: Your own key-value pairs.
+
+        Raises:
+            BadRequestError: The request was invalid; `error.param` names the field.
+            ConflictError: The idempotency key was reused with a different request body.
+        """
+        return await self._client._request(
+            "POST",
+            "/customers",
+            cast_to=Customer,
+            json={"name": name, "email": email, "metadata": metadata},
+            options=options,
+        )
+
+    async def search(
+        self,
+        *,
+        q: str,
+        **options: Unpack[RequestOptions],
+    ) -> List[Customer]:
+        """Search customers by name.
+
+        Use `customers.list` with `email` instead.
+
+        Deprecated: this operation may be removed.
+        """
+        warn_deprecated(
+            "customers.search() is deprecated: Use `customers.list` with `email` instead."
+        )
+        return await self._client._request(
+            "GET",
+            "/customers/search",
+            cast_to=List[Customer],
+            params={"q": q},
+            options=options,
+        )
+
+    async def get(
+        self,
+        *,
+        customer_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> Customer:
+        """Fetch one customer.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/customers/{quote(customer_id, safe='')}"
+        return await self._client._request(
+            "GET", path, cast_to=Customer, options=options
+        )
+
+    async def update(
+        self,
+        *,
+        customer_id: str,
+        name: str | NotGiven = NOT_GIVEN,
+        email: Optional[str] | NotGiven = NOT_GIVEN,
+        metadata: Dict[str, str] | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> Customer:
+        """Change a customer's name, email or metadata.
+
+        Args:
+            email: Send null to remove the email.
+            metadata: Your own key-value pairs.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/customers/{quote(customer_id, safe='')}"
+        return await self._client._request(
+            "PATCH",
+            path,
+            cast_to=Customer,
+            json={"name": name, "email": email, "metadata": metadata},
+            options=options,
+        )
+
+    async def delete(
+        self,
+        *,
+        customer_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> None:
+        """Delete a customer and all their unpaid invoices.
+
+        Permanent, and also deletes the customer's draft and open invoices. Fetch the customer first and confirm with the user.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/customers/{quote(customer_id, safe='')}"
+        await self._client._request("DELETE", path, cast_to=None, options=options)
+
+
+class AsyncCustomersWithRawResponse:
+    """`AsyncCustomers` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self._client = client
+
+    async def list(
+        self,
+        *,
+        limit: int | NotGiven = NOT_GIVEN,
+        starting_after: str | NotGiven = NOT_GIVEN,
+        email: str | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[AsyncPage[Customer]]:
+        """List customers, newest first.
+
+        Args:
+            limit: Maximum items per page (at most 100). Defaults to 20.
+            starting_after: Cursor from the previous page's `next_cursor`.
+            email: Only customers with exactly this email.
+
+        Raises:
+            RateLimitError: Too many requests; retry after the number of seconds in Retry-After.
+
+        Returns one page. Iterate it to walk every item across pages.
+        """
+        return await self._client._paginate(
+            "GET",
+            "/customers",
+            paging=Cursor(
+                param="starting_after", next_cursor=("next_cursor",), items=("data",)
+            ),
+            item_type=Customer,
+            response_type=CustomersListResponse,
+            params={"limit": limit, "starting_after": starting_after, "email": email},
+            options=options,
+            raw=True,
+        )
+
+    async def create(
+        self,
+        *,
+        name: str,
+        email: Optional[str] | NotGiven = NOT_GIVEN,
+        metadata: Dict[str, str] | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Customer]:
+        """Create a customer.
+
+        Args:
+            metadata: Your own key-value pairs.
+
+        Raises:
+            BadRequestError: The request was invalid; `error.param` names the field.
+            ConflictError: The idempotency key was reused with a different request body.
+        """
+        return await self._client._request(
+            "POST",
+            "/customers",
+            cast_to=Customer,
+            json={"name": name, "email": email, "metadata": metadata},
+            options=options,
+            raw=True,
+        )
+
+    async def search(
+        self,
+        *,
+        q: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[List[Customer]]:
+        """Search customers by name.
+
+        Use `customers.list` with `email` instead.
+
+        Deprecated: this operation may be removed.
+        """
+        warn_deprecated(
+            "customers.search() is deprecated: Use `customers.list` with `email` instead."
+        )
+        return await self._client._request(
+            "GET",
+            "/customers/search",
+            cast_to=List[Customer],
+            params={"q": q},
+            options=options,
+            raw=True,
+        )
+
+    async def get(
+        self,
+        *,
+        customer_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Customer]:
+        """Fetch one customer.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/customers/{quote(customer_id, safe='')}"
+        return await self._client._request(
+            "GET", path, cast_to=Customer, options=options, raw=True
+        )
+
+    async def update(
+        self,
+        *,
+        customer_id: str,
+        name: str | NotGiven = NOT_GIVEN,
+        email: Optional[str] | NotGiven = NOT_GIVEN,
+        metadata: Dict[str, str] | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Customer]:
+        """Change a customer's name, email or metadata.
+
+        Args:
+            email: Send null to remove the email.
+            metadata: Your own key-value pairs.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/customers/{quote(customer_id, safe='')}"
+        return await self._client._request(
+            "PATCH",
+            path,
+            cast_to=Customer,
+            json={"name": name, "email": email, "metadata": metadata},
+            options=options,
+            raw=True,
+        )
+
+    async def delete(
+        self,
+        *,
+        customer_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[None]:
+        """Delete a customer and all their unpaid invoices.
+
+        Permanent, and also deletes the customer's draft and open invoices. Fetch the customer first and confirm with the user.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/customers/{quote(customer_id, safe='')}"
+        return await self._client._request(
+            "DELETE", path, cast_to=None, options=options, raw=True
+        )

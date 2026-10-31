@@ -1,0 +1,561 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+from __future__ import annotations
+
+import os
+from datetime import date
+from typing import TYPE_CHECKING, List, Literal, Union
+from urllib.parse import quote
+
+from typing_extensions import Unpack
+
+from .._base import RequestOptions
+from .._pagination import AsyncPage, Offset, SyncPage
+from .._response import APIResponse
+from .._utils import NOT_GIVEN, NotGiven
+from ..types import Currency, Invoice, InvoicesListResponse, LineItem
+
+if TYPE_CHECKING:
+    from .._client import AsyncLedger, Ledger
+
+
+class Invoices:
+    """Requests for payment."""
+
+    def __init__(self, client: Ledger) -> None:
+        self._client = client
+
+    def list(
+        self,
+        *,
+        limit: int | NotGiven = NOT_GIVEN,
+        offset: int | NotGiven = NOT_GIVEN,
+        status: Union[Literal["draft", "open", "paid", "void"], str]
+        | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> SyncPage[Invoice]:
+        """List invoices.
+
+        Args:
+            limit: Maximum items per page (at most 100). Defaults to 20.
+            offset: Defaults to 0.
+
+        Returns one page. Iterate it to walk every item across pages.
+        """
+        return self._client._paginate(
+            "GET",
+            "/invoices",
+            paging=Offset(offset_param="offset", limit_param="limit", items=("data",)),
+            item_type=Invoice,
+            response_type=InvoicesListResponse,
+            params={"limit": limit, "offset": offset, "status": status},
+            options=options,
+        )
+
+    def create(
+        self,
+        *,
+        customer_id: str,
+        line_items: List[LineItem],
+        currency: Currency | NotGiven = NOT_GIVEN,
+        due_date: date | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> Invoice:
+        """Create a draft invoice.
+
+        Args:
+            currency: Defaults to "usd".
+
+        Raises:
+            BadRequestError: The request was invalid; `error.param` names the field.
+        """
+        return self._client._request(
+            "POST",
+            "/invoices",
+            cast_to=Invoice,
+            json={
+                "customer_id": customer_id,
+                "line_items": line_items,
+                "currency": currency,
+                "due_date": due_date,
+            },
+            options=options,
+        )
+
+    def get(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> Invoice:
+        """Fetch one invoice.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}"
+        return self._client._request("GET", path, cast_to=Invoice, options=options)
+
+    def finalize(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> Invoice:
+        """Turn a draft invoice into an open one and email it to the customer.
+
+        Emails the customer immediately; this can't be undone.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}/finalize"
+        return self._client._request("POST", path, cast_to=Invoice, options=options)
+
+    def void(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> Invoice:
+        """Void an open invoice so it can no longer be paid.
+
+        Permanent. Only open invoices can be voided.
+
+        Raises:
+            ConflictError: The invoice isn't open.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}/void"
+        return self._client._request("POST", path, cast_to=Invoice, options=options)
+
+    def download_pdf(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> bytes:
+        """Download the invoice as a PDF."""
+        path = f"/invoices/{quote(invoice_id, safe='')}/pdf"
+        return self._client._request(
+            "GET", path, cast_to=bytes, accept="application/pdf", options=options
+        )
+
+    def download_pdf_to_file(
+        self,
+        dest: Union[str, os.PathLike[str]],
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> None:
+        """Download the invoice as a PDF.
+
+        Save the response to `dest` instead of returning the bytes. The file is written in chunks, so large downloads stay out of memory.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}/pdf"
+        self._client._download(
+            "GET", path, dest=dest, accept="application/pdf", options=options
+        )
+
+
+class InvoicesWithRawResponse:
+    """`Invoices` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: Ledger) -> None:
+        self._client = client
+
+    def list(
+        self,
+        *,
+        limit: int | NotGiven = NOT_GIVEN,
+        offset: int | NotGiven = NOT_GIVEN,
+        status: Union[Literal["draft", "open", "paid", "void"], str]
+        | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[SyncPage[Invoice]]:
+        """List invoices.
+
+        Args:
+            limit: Maximum items per page (at most 100). Defaults to 20.
+            offset: Defaults to 0.
+
+        Returns one page. Iterate it to walk every item across pages.
+        """
+        return self._client._paginate(
+            "GET",
+            "/invoices",
+            paging=Offset(offset_param="offset", limit_param="limit", items=("data",)),
+            item_type=Invoice,
+            response_type=InvoicesListResponse,
+            params={"limit": limit, "offset": offset, "status": status},
+            options=options,
+            raw=True,
+        )
+
+    def create(
+        self,
+        *,
+        customer_id: str,
+        line_items: List[LineItem],
+        currency: Currency | NotGiven = NOT_GIVEN,
+        due_date: date | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Invoice]:
+        """Create a draft invoice.
+
+        Args:
+            currency: Defaults to "usd".
+
+        Raises:
+            BadRequestError: The request was invalid; `error.param` names the field.
+        """
+        return self._client._request(
+            "POST",
+            "/invoices",
+            cast_to=Invoice,
+            json={
+                "customer_id": customer_id,
+                "line_items": line_items,
+                "currency": currency,
+                "due_date": due_date,
+            },
+            options=options,
+            raw=True,
+        )
+
+    def get(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Invoice]:
+        """Fetch one invoice.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}"
+        return self._client._request(
+            "GET", path, cast_to=Invoice, options=options, raw=True
+        )
+
+    def finalize(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Invoice]:
+        """Turn a draft invoice into an open one and email it to the customer.
+
+        Emails the customer immediately; this can't be undone.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}/finalize"
+        return self._client._request(
+            "POST", path, cast_to=Invoice, options=options, raw=True
+        )
+
+    def void(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Invoice]:
+        """Void an open invoice so it can no longer be paid.
+
+        Permanent. Only open invoices can be voided.
+
+        Raises:
+            ConflictError: The invoice isn't open.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}/void"
+        return self._client._request(
+            "POST", path, cast_to=Invoice, options=options, raw=True
+        )
+
+    def download_pdf(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[bytes]:
+        """Download the invoice as a PDF."""
+        path = f"/invoices/{quote(invoice_id, safe='')}/pdf"
+        return self._client._request(
+            "GET",
+            path,
+            cast_to=bytes,
+            accept="application/pdf",
+            options=options,
+            raw=True,
+        )
+
+
+class AsyncInvoices:
+    """Requests for payment."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self._client = client
+
+    async def list(
+        self,
+        *,
+        limit: int | NotGiven = NOT_GIVEN,
+        offset: int | NotGiven = NOT_GIVEN,
+        status: Union[Literal["draft", "open", "paid", "void"], str]
+        | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> AsyncPage[Invoice]:
+        """List invoices.
+
+        Args:
+            limit: Maximum items per page (at most 100). Defaults to 20.
+            offset: Defaults to 0.
+
+        Returns one page. Iterate it to walk every item across pages.
+        """
+        return await self._client._paginate(
+            "GET",
+            "/invoices",
+            paging=Offset(offset_param="offset", limit_param="limit", items=("data",)),
+            item_type=Invoice,
+            response_type=InvoicesListResponse,
+            params={"limit": limit, "offset": offset, "status": status},
+            options=options,
+        )
+
+    async def create(
+        self,
+        *,
+        customer_id: str,
+        line_items: List[LineItem],
+        currency: Currency | NotGiven = NOT_GIVEN,
+        due_date: date | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> Invoice:
+        """Create a draft invoice.
+
+        Args:
+            currency: Defaults to "usd".
+
+        Raises:
+            BadRequestError: The request was invalid; `error.param` names the field.
+        """
+        return await self._client._request(
+            "POST",
+            "/invoices",
+            cast_to=Invoice,
+            json={
+                "customer_id": customer_id,
+                "line_items": line_items,
+                "currency": currency,
+                "due_date": due_date,
+            },
+            options=options,
+        )
+
+    async def get(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> Invoice:
+        """Fetch one invoice.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}"
+        return await self._client._request(
+            "GET", path, cast_to=Invoice, options=options
+        )
+
+    async def finalize(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> Invoice:
+        """Turn a draft invoice into an open one and email it to the customer.
+
+        Emails the customer immediately; this can't be undone.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}/finalize"
+        return await self._client._request(
+            "POST", path, cast_to=Invoice, options=options
+        )
+
+    async def void(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> Invoice:
+        """Void an open invoice so it can no longer be paid.
+
+        Permanent. Only open invoices can be voided.
+
+        Raises:
+            ConflictError: The invoice isn't open.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}/void"
+        return await self._client._request(
+            "POST", path, cast_to=Invoice, options=options
+        )
+
+    async def download_pdf(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> bytes:
+        """Download the invoice as a PDF."""
+        path = f"/invoices/{quote(invoice_id, safe='')}/pdf"
+        return await self._client._request(
+            "GET", path, cast_to=bytes, accept="application/pdf", options=options
+        )
+
+    async def download_pdf_to_file(
+        self,
+        dest: Union[str, os.PathLike[str]],
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> None:
+        """Download the invoice as a PDF.
+
+        Save the response to `dest` instead of returning the bytes. The file is written in chunks, so large downloads stay out of memory.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}/pdf"
+        await self._client._download(
+            "GET", path, dest=dest, accept="application/pdf", options=options
+        )
+
+
+class AsyncInvoicesWithRawResponse:
+    """`AsyncInvoices` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self._client = client
+
+    async def list(
+        self,
+        *,
+        limit: int | NotGiven = NOT_GIVEN,
+        offset: int | NotGiven = NOT_GIVEN,
+        status: Union[Literal["draft", "open", "paid", "void"], str]
+        | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[AsyncPage[Invoice]]:
+        """List invoices.
+
+        Args:
+            limit: Maximum items per page (at most 100). Defaults to 20.
+            offset: Defaults to 0.
+
+        Returns one page. Iterate it to walk every item across pages.
+        """
+        return await self._client._paginate(
+            "GET",
+            "/invoices",
+            paging=Offset(offset_param="offset", limit_param="limit", items=("data",)),
+            item_type=Invoice,
+            response_type=InvoicesListResponse,
+            params={"limit": limit, "offset": offset, "status": status},
+            options=options,
+            raw=True,
+        )
+
+    async def create(
+        self,
+        *,
+        customer_id: str,
+        line_items: List[LineItem],
+        currency: Currency | NotGiven = NOT_GIVEN,
+        due_date: date | NotGiven = NOT_GIVEN,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Invoice]:
+        """Create a draft invoice.
+
+        Args:
+            currency: Defaults to "usd".
+
+        Raises:
+            BadRequestError: The request was invalid; `error.param` names the field.
+        """
+        return await self._client._request(
+            "POST",
+            "/invoices",
+            cast_to=Invoice,
+            json={
+                "customer_id": customer_id,
+                "line_items": line_items,
+                "currency": currency,
+                "due_date": due_date,
+            },
+            options=options,
+            raw=True,
+        )
+
+    async def get(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Invoice]:
+        """Fetch one invoice.
+
+        Raises:
+            NotFoundError: No object with that ID.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}"
+        return await self._client._request(
+            "GET", path, cast_to=Invoice, options=options, raw=True
+        )
+
+    async def finalize(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Invoice]:
+        """Turn a draft invoice into an open one and email it to the customer.
+
+        Emails the customer immediately; this can't be undone.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}/finalize"
+        return await self._client._request(
+            "POST", path, cast_to=Invoice, options=options, raw=True
+        )
+
+    async def void(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[Invoice]:
+        """Void an open invoice so it can no longer be paid.
+
+        Permanent. Only open invoices can be voided.
+
+        Raises:
+            ConflictError: The invoice isn't open.
+        """
+        path = f"/invoices/{quote(invoice_id, safe='')}/void"
+        return await self._client._request(
+            "POST", path, cast_to=Invoice, options=options, raw=True
+        )
+
+    async def download_pdf(
+        self,
+        *,
+        invoice_id: str,
+        **options: Unpack[RequestOptions],
+    ) -> APIResponse[bytes]:
+        """Download the invoice as a PDF."""
+        path = f"/invoices/{quote(invoice_id, safe='')}/pdf"
+        return await self._client._request(
+            "GET",
+            path,
+            cast_to=bytes,
+            accept="application/pdf",
+            options=options,
+            raw=True,
+        )

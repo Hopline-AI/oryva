@@ -2,4 +2,4 @@
 source: crates/oryva-emit-python/tests/generate.rs
 expression: content
 ---
-__version__ = "1.0"
+__version__ = "2026.10.01"

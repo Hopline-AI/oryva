@@ -1,39 +1,73 @@
 from __future__ import annotations
 
-{% for line in r.stdlib %}
+import os
+from typing import TYPE_CHECKING, Union
+{% for line in r.imports %}
 {{ line }}
 {% endfor %}
-{% if r.third_party %}
 
-{% for line in r.third_party %}
-{{ line }}
-{% endfor %}
-{% endif %}
+from typing_extensions import Unpack
+
+from .._base import RequestOptions
+from .._pagination import AsyncPage, Cursor, Offset, Page, SyncPage
+from .._response import APIResponse
+from .._streaming import AsyncStream, Stream
+from .._utils import NOT_GIVEN, NotGiven, warn_deprecated
 {% if r.types %}
-
 from ..types import {{ r.types | join(", ") }}
 {% endif %}
 
 if TYPE_CHECKING:
-    from .._client import {{ r.client_class }}
+    from .._client import {{ c.class }}, {{ c.async_class }}
 
+{% macro methods(list) %}
+{% for m in list %}
 
-class {{ r.class }}:
-    """{{ r.doc }}"""
-
-    def __init__(self, client: {{ r.client_class }}) -> None:
-        self._client = client
-{% for m in r.methods %}
-
-    def {{ m.name }}(
+    {{ "async def" if m.is_async else "def" }} {{ m.name }}(
         self,
+{% if m.first %}
+        {{ m.first }},
+{% endif %}
+{% if m.args %}
         *,
+{% endif %}
 {% for a in m.args %}
         {{ a }},
 {% endfor %}
+        **options: Unpack[RequestOptions],
     ) -> {{ m.returns }}:
 {{ m.doc }}
 {% for line in m.body %}
         {{ line }}
 {% endfor %}
 {% endfor %}
+{% endmacro %}
+
+
+class {{ r.class }}:
+    """{{ r.doc }}"""
+
+    def __init__(self, client: {{ c.class }}) -> None:
+        self._client = client
+{{ methods(r.sync) }}
+
+class {{ r.class }}WithRawResponse:
+    """`{{ r.class }}` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: {{ c.class }}) -> None:
+        self._client = client
+{{ methods(r.sync_raw) }}
+
+class Async{{ r.class }}:
+    """{{ r.doc }}"""
+
+    def __init__(self, client: {{ c.async_class }}) -> None:
+        self._client = client
+{{ methods(r.asynchronous) }}
+
+class Async{{ r.class }}WithRawResponse:
+    """`Async{{ r.class }}` methods that return an `APIResponse` with the status, headers and parsed body."""
+
+    def __init__(self, client: {{ c.async_class }}) -> None:
+        self._client = client
+{{ methods(r.async_raw) }}

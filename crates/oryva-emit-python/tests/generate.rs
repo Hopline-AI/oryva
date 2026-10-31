@@ -2,10 +2,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use oryva_emit_python::{Options, emit_mcp, emit_sdk};
-use oryva_ir::{Api, ResponseBody};
+use oryva_ir::{Api, ApiKeyLocation, Auth, ResponseBody};
 
 fn fixture() -> Api {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sarvam-lite.ir.json");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ledger.ir.json");
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
@@ -64,23 +64,57 @@ fn mcp_snapshots_and_lints() {
     check_python(dir.path());
 }
 
-/// The fixture has no binary, text or empty-body paths that differ from JSON; swap some in.
+/// The fixture has no text response, no API key or basic auth, and no APIs without servers,
+/// idempotency or webhooks; swap those in and make sure the output still compiles.
 #[test]
-fn binary_text_and_empty_responses_compile() {
+fn other_response_kinds_auth_schemes_and_bare_apis_compile() {
     let mut api = fixture();
-    let methods = &mut api.resources[0].methods;
-    methods[0].response = ResponseBody::Binary {
-        content_type: "audio/wav".into(),
-    };
-    methods[1].response = ResponseBody::Text;
-    methods[2].response = ResponseBody::Empty;
+    api.resources[0].methods[0].response = ResponseBody::Text;
+    api.resources[0].methods[0].pagination = None;
+    api.auth = vec![
+        Auth::ApiKey {
+            location: ApiKeyLocation::Header,
+            name: "X-Api-Key".into(),
+            env_var: "LEDGER_API_KEY".into(),
+        },
+        Auth::ApiKey {
+            location: ApiKeyLocation::Query,
+            name: "key".into(),
+            env_var: "LEDGER_QUERY_KEY".into(),
+        },
+        Auth::ApiKey {
+            location: ApiKeyLocation::Cookie,
+            name: "session".into(),
+            env_var: "LEDGER_SESSION".into(),
+        },
+        Auth::Basic {
+            username_env: "LEDGER_USERNAME".into(),
+            password_env: "LEDGER_PASSWORD".into(),
+        },
+    ];
     let opts = Options::for_api(&api);
     let dir = tempfile::tempdir().unwrap();
-    emit_sdk(&api, &opts, &dir.path().join("sdk")).unwrap();
-    emit_mcp(&api, &opts, &dir.path().join("mcp")).unwrap();
+    emit_sdk(&api, &opts, &dir.path().join("variants/sdk")).unwrap();
+    emit_mcp(&api, &opts, &dir.path().join("variants/mcp")).unwrap();
+    let client =
+        std::fs::read_to_string(dir.path().join("variants/sdk/src/ledger/_client.py")).unwrap();
+    for needle in [
+        "api_key_auth(\"header\", \"X-Api-Key\"",
+        "api_key_auth(\"query\", \"key\"",
+        "api_key_auth(\"cookie\", \"session\"",
+        "basic_auth(username, password)",
+    ] {
+        assert!(client.contains(needle), "missing {needle}");
+    }
+
+    api.servers.clear();
+    api.auth.clear();
+    api.idempotency_header = None;
+    api.webhooks.clear();
+    api.webhook_signing = None;
+    emit_sdk(&api, &opts, &dir.path().join("bare/sdk")).unwrap();
+    emit_mcp(&api, &opts, &dir.path().join("bare/mcp")).unwrap();
     check_python(dir.path());
-    let server = std::fs::read_to_string(dir.path().join("mcp/src/sarvam_mcp/server.py")).unwrap();
-    assert!(server.contains("_save_binary(result, \"text_translate\", \"audio/wav\")"));
 }
 
 #[test]
@@ -92,5 +126,8 @@ fn default_options_follow_api_name() {
         (opts.package.as_str(), opts.dist_name.as_str()),
         ("my_api", "my-api")
     );
-    assert_eq!(opts.version, "1.0");
+    // PyPI rejects `2026-10-01`.
+    assert_eq!(opts.version, "2026.10.01");
+    api.version = "1.4".into();
+    assert_eq!(Options::for_api(&api).version, "1.4");
 }

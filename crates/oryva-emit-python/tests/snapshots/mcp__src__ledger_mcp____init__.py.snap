@@ -2,7 +2,7 @@
 source: crates/oryva-emit-python/tests/generate.rs
 expression: content
 ---
-"""MCP server for the Sarvam API (lite fixture)."""
+"""MCP server for the Ledger API."""
 
 from .server import main, server
 

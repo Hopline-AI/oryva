@@ -1,0 +1,244 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+from __future__ import annotations
+
+import os
+from types import TracebackType
+from typing import Dict, Literal, Optional, Type
+
+import httpx
+
+from ._auth import Auth, OAuth2Auth, bearer_auth
+from ._base import (
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_TIMEOUT,
+    AsyncAPIClient,
+    SyncAPIClient,
+    Timeout,
+)
+from ._errors import LedgerError
+from .resources import (
+    AsyncCustomers,
+    AsyncCustomersWithRawResponse,
+    AsyncEvents,
+    AsyncEventsWithRawResponse,
+    AsyncFiles,
+    AsyncFilesWithRawResponse,
+    AsyncInvoices,
+    AsyncInvoicesWithRawResponse,
+    AsyncPayments,
+    AsyncPaymentsWithRawResponse,
+    AsyncRefunds,
+    AsyncRefundsWithRawResponse,
+    Customers,
+    CustomersWithRawResponse,
+    Events,
+    EventsWithRawResponse,
+    Files,
+    FilesWithRawResponse,
+    Invoices,
+    InvoicesWithRawResponse,
+    Payments,
+    PaymentsWithRawResponse,
+    Refunds,
+    RefundsWithRawResponse,
+    Webhooks,
+)
+
+ENVIRONMENTS: Dict[str, str] = {
+    "production": "https://api.ledger.example",
+    "sandbox": "https://sandbox.ledger.example",
+}
+DEFAULT_ENVIRONMENT = "production"
+Environment = Literal["production", "sandbox"]
+
+
+def _resolve_base_url(environment: Optional[str], base_url: Optional[str]) -> str:
+    """An explicit base_url wins, then `environment`, then LEDGER_BASE_URL, then the default."""
+    if base_url:
+        return base_url
+    if environment is not None:
+        if environment not in ENVIRONMENTS:
+            raise LedgerError(
+                f"Unknown environment {environment!r}. Choose one of: {', '.join(ENVIRONMENTS)}."
+            )
+        return ENVIRONMENTS[environment]
+    return os.environ.get("LEDGER_BASE_URL") or ENVIRONMENTS[DEFAULT_ENVIRONMENT]
+
+
+def _resolve_auth(
+    api_key: Optional[str],
+    client_id: Optional[str],
+    client_secret: Optional[str],
+    token_url: Optional[str],
+) -> Auth:
+    """Use the first auth scheme whose credentials were passed or are in the environment."""
+    token = api_key or os.environ.get("LEDGER_API_KEY")
+    if token:
+        return bearer_auth(token)
+    client_id = client_id or os.environ.get("LEDGER_CLIENT_ID")
+    client_secret = client_secret or os.environ.get("LEDGER_CLIENT_SECRET")
+    if client_id and client_secret:
+        return OAuth2Auth(
+            token_url=token_url
+            or os.environ.get("LEDGER_OAUTH_TOKEN_URL")
+            or "https://auth.ledger.example/oauth/token",
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=["ledger.read", "ledger.write"],
+        )
+    raise LedgerError(
+        "No credentials found. Pass api_key= (or set LEDGER_API_KEY), or client_id= and client_secret= (or set LEDGER_CLIENT_ID and LEDGER_CLIENT_SECRET)."
+    )
+
+
+class Ledger(SyncAPIClient):
+    """Client for the Ledger API.
+
+    Credentials, the environment and the base URL come from the arguments, or from the
+    environment when you leave them out:
+
+    - `api_key`: Bearer token. Falls back to `LEDGER_API_KEY`.
+
+    - `client_id`: OAuth2 client ID. Falls back to `LEDGER_CLIENT_ID`.
+
+    - `client_secret`: OAuth2 client secret. Falls back to `LEDGER_CLIENT_SECRET`.
+
+    - `token_url`: OAuth2 token endpoint. Defaults to https://auth.ledger.example/oauth/token. Falls back to `LEDGER_OAUTH_TOKEN_URL`.
+    - `base_url`: Falls back to `LEDGER_BASE_URL`.
+    """
+
+    customers: Customers
+    invoices: Invoices
+    payments: Payments
+    refunds: Refunds
+    files: Files
+    events: Events
+    webhooks: Webhooks
+    with_raw_response: LedgerWithRawResponse
+
+    def __init__(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        token_url: Optional[str] = None,
+        webhook_secret: Optional[str] = None,
+        environment: Optional[Environment] = None,
+        base_url: Optional[str] = None,
+        timeout: Timeout = DEFAULT_TIMEOUT,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        http_client: Optional[httpx.Client] = None,
+    ) -> None:
+        super().__init__(
+            auth=_resolve_auth(api_key, client_id, client_secret, token_url),
+            base_url=_resolve_base_url(environment, base_url),
+            timeout=timeout,
+            max_retries=max_retries,
+            webhook_secret=webhook_secret,
+            http_client=http_client,
+        )
+        self.customers = Customers(self)
+        self.invoices = Invoices(self)
+        self.payments = Payments(self)
+        self.refunds = Refunds(self)
+        self.files = Files(self)
+        self.events = Events(self)
+        self.webhooks = Webhooks(self)
+        self.with_raw_response = LedgerWithRawResponse(self)
+
+    def __enter__(self) -> Ledger:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> None:
+        self.close()
+
+
+class AsyncLedger(AsyncAPIClient):
+    """The async client for the Ledger API. It takes the same arguments as `Ledger`;
+    every method is a coroutine, and paginated and streaming results are consumed with
+    `async for`."""
+
+    customers: AsyncCustomers
+    invoices: AsyncInvoices
+    payments: AsyncPayments
+    refunds: AsyncRefunds
+    files: AsyncFiles
+    events: AsyncEvents
+    webhooks: Webhooks
+    with_raw_response: AsyncLedgerWithRawResponse
+
+    def __init__(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        token_url: Optional[str] = None,
+        webhook_secret: Optional[str] = None,
+        environment: Optional[Environment] = None,
+        base_url: Optional[str] = None,
+        timeout: Timeout = DEFAULT_TIMEOUT,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        http_client: Optional[httpx.AsyncClient] = None,
+    ) -> None:
+        super().__init__(
+            auth=_resolve_auth(api_key, client_id, client_secret, token_url),
+            base_url=_resolve_base_url(environment, base_url),
+            timeout=timeout,
+            max_retries=max_retries,
+            webhook_secret=webhook_secret,
+            http_client=http_client,
+        )
+        self.customers = AsyncCustomers(self)
+        self.invoices = AsyncInvoices(self)
+        self.payments = AsyncPayments(self)
+        self.refunds = AsyncRefunds(self)
+        self.files = AsyncFiles(self)
+        self.events = AsyncEvents(self)
+        self.webhooks = Webhooks(self)
+        self.with_raw_response = AsyncLedgerWithRawResponse(self)
+
+    async def __aenter__(self) -> AsyncLedger:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> None:
+        await self.aclose()
+
+
+class LedgerWithRawResponse:
+    """`client.with_raw_response.<resource>.<method>(...)` returns an `APIResponse`: the status,
+    headers and parsed body."""
+
+    def __init__(self, client: Ledger) -> None:
+        self.customers = CustomersWithRawResponse(client)
+        self.invoices = InvoicesWithRawResponse(client)
+        self.payments = PaymentsWithRawResponse(client)
+        self.refunds = RefundsWithRawResponse(client)
+        self.files = FilesWithRawResponse(client)
+        self.events = EventsWithRawResponse(client)
+
+
+class AsyncLedgerWithRawResponse:
+    """The async `with_raw_response`."""
+
+    def __init__(self, client: AsyncLedger) -> None:
+        self.customers = AsyncCustomersWithRawResponse(client)
+        self.invoices = AsyncInvoicesWithRawResponse(client)
+        self.payments = AsyncPaymentsWithRawResponse(client)
+        self.refunds = AsyncRefundsWithRawResponse(client)
+        self.files = AsyncFilesWithRawResponse(client)
+        self.events = AsyncEventsWithRawResponse(client)

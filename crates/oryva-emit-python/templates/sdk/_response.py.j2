@@ -1,0 +1,44 @@
+from __future__ import annotations
+
+from typing import Any, Generic, Mapping, Optional, TypeVar
+
+import httpx
+
+from ._utils import adapter
+
+T = TypeVar("T")
+
+
+class APIResponse(Generic[T]):
+    """What `client.with_raw_response.<resource>.<method>(...)` returns: the HTTP status and
+    headers next to the parsed body."""
+
+    def __init__(self, parsed: T, http_response: httpx.Response) -> None:
+        self.parsed = parsed
+        self.http_response = http_response
+
+    @property
+    def status_code(self) -> int:
+        return self.http_response.status_code
+
+    @property
+    def headers(self) -> Mapping[str, str]:
+        return self.http_response.headers
+
+    @property
+    def request_id(self) -> Optional[str]:
+        return self.http_response.headers.get("x-request-id")
+
+    def __repr__(self) -> str:
+        return f"<APIResponse [{self.status_code}] {self.parsed!r}>"
+
+
+def parse_response(cast_to: Any, response: httpx.Response) -> Any:
+    """Turn a successful response into `cast_to`: a model or other type, `bytes`, `str` or None."""
+    if cast_to is None:
+        return None
+    if cast_to is bytes:
+        return response.content
+    if cast_to is str:
+        return response.text
+    return adapter(cast_to).validate_python(response.json())

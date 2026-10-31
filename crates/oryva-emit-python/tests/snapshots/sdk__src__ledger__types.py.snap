@@ -1,0 +1,248 @@
+---
+source: crates/oryva-emit-python/tests/generate.rs
+expression: content
+---
+from __future__ import annotations
+
+import os
+from datetime import date, datetime
+from typing import Annotated, Any, BinaryIO, Dict, List, Literal, Optional, Union
+
+from pydantic import BaseModel, ConfigDict, Discriminator, Tag
+
+FileInput = Union[bytes, str, "os.PathLike[str]", BinaryIO]
+"""A file to upload: raw bytes, a path, or a file object opened in binary mode."""
+
+Currency = Union[Literal["usd", "eur", "gbp", "inr"], str]
+"""ISO 4217 currency code, lowercase."""
+
+
+class Customer(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str
+    name: str
+    email: Optional[str] = None
+    metadata: Optional[Dict[str, str]] = None
+    """Your own key-value pairs."""
+    created_at: datetime
+
+
+class LineItem(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    description: str
+    amount: int
+    """Amount in the currency's smallest unit, e.g. cents."""
+    quantity: int = 1
+
+
+class Invoice(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str
+    customer_id: str
+    status: Union[Literal["draft", "open", "paid", "void"], str]
+    currency: Currency
+    line_items: List[LineItem]
+    total: int
+    reminder_level: Optional[Union[Literal[0, 1, 2], int]] = None
+    """How many payment reminders have been sent."""
+    due_date: Optional[date] = None
+
+
+class Payment(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str
+    invoice_id: str
+    amount: int
+    status: Union[Literal["pending", "succeeded", "failed"], str]
+    failure_reason: Optional[str] = None
+
+
+class Refund(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str
+    payment_id: str
+    amount: int
+    reason: Optional[
+        Union[Literal["duplicate", "fraudulent", "requested_by_customer"], str]
+    ] = None
+
+
+class File(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str
+    filename: str
+    size_bytes: int
+
+
+class InvoicePaidEvent(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type: Union[Literal["invoice.paid"], str]
+    invoice: Invoice
+
+
+class PaymentFailedEvent(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type: Union[Literal["payment.failed"], str]
+    payment: Payment
+
+
+class UnknownEvent(BaseModel):
+    """Any `Event` variant this SDK version doesn't know yet, with its fields kept as extras."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type: Optional[str] = None
+
+
+_EVENT_TAGS: Dict[str, str] = {
+    "invoice.paid": "InvoicePaidEvent",
+    "payment.failed": "PaymentFailedEvent",
+}
+
+
+def _event_tag(value: Any) -> str:
+    kind = (
+        value.get("type") if isinstance(value, dict) else getattr(value, "type", None)
+    )
+    return (
+        _EVENT_TAGS.get(kind, "UnknownEvent")
+        if isinstance(kind, str)
+        else "UnknownEvent"
+    )
+
+
+Event = Annotated[
+    Union[
+        Annotated[InvoicePaidEvent, Tag("InvoicePaidEvent")],
+        Annotated[PaymentFailedEvent, Tag("PaymentFailedEvent")],
+        Annotated[UnknownEvent, Tag("UnknownEvent")],
+    ],
+    Discriminator(_event_tag),
+]
+
+
+class ErrorError(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    code: str
+    message: str
+    param: Optional[str] = None
+    """The request field the error is about, if any."""
+
+
+class Error(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    error: ErrorError
+
+
+class CustomersListResponse(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    data: List[Customer]
+    next_cursor: Optional[str] = None
+
+
+class CustomersCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: str
+    email: Optional[str] = None
+    metadata: Optional[Dict[str, str]] = None
+    """Your own key-value pairs."""
+
+
+class CustomersUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: Optional[str] = None
+    email: Optional[str] = None
+    """Send null to remove the email."""
+    metadata: Optional[Dict[str, str]] = None
+    """Your own key-value pairs."""
+
+
+class InvoicesListResponse(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    data: List[Invoice]
+    total: int
+
+
+class InvoicesCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    customer_id: str
+    currency: Currency = "usd"
+    line_items: List[LineItem]
+    due_date: Optional[date] = None
+
+
+class PaymentsListResponse(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    items: List[Payment]
+    total_pages: Optional[int] = None
+
+
+class RefundsCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    payment_id: str
+    amount: Optional[int] = None
+    """Smallest currency unit. Omit to refund the full remaining amount."""
+    reason: Optional[
+        Union[Literal["duplicate", "fraudulent", "requested_by_customer"], str]
+    ] = None
+
+
+class FilesUploadRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="allow", populate_by_name=True, arbitrary_types_allowed=True
+    )
+
+    file: FileInput
+    purpose: Optional[Union[Literal["receipt", "contract"], str]] = None
+
+
+class UnknownWebhookEvent(BaseModel):
+    """Any `WebhookEvent` variant this SDK version doesn't know yet, with its fields kept as extras."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type: Optional[str] = None
+
+
+_WEBHOOK_EVENT_TAGS: Dict[str, str] = {
+    "invoice.paid": "InvoicePaidEvent",
+    "payment.failed": "PaymentFailedEvent",
+}
+
+
+def _webhook_event_tag(value: Any) -> str:
+    kind = (
+        value.get("type") if isinstance(value, dict) else getattr(value, "type", None)
+    )
+    return (
+        _WEBHOOK_EVENT_TAGS.get(kind, "UnknownWebhookEvent")
+        if isinstance(kind, str)
+        else "UnknownWebhookEvent"
+    )
+
+
+WebhookEvent = Annotated[
+    Union[
+        Annotated[InvoicePaidEvent, Tag("InvoicePaidEvent")],
+        Annotated[PaymentFailedEvent, Tag("PaymentFailedEvent")],
+        Annotated[UnknownWebhookEvent, Tag("UnknownWebhookEvent")],
+    ],
+    Discriminator(_webhook_event_tag),
+]

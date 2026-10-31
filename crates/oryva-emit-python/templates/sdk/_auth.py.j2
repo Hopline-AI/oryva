@@ -1,0 +1,151 @@
+"""Credentials: what each auth scheme adds to a request."""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import logging
+import threading
+import time
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+import httpx
+
+from ._errors import APIConnectionError, {{ c.error_base }}, make_error
+
+logger = logging.getLogger("{{ c.pkg }}")
+
+# Fetch a new OAuth2 token this many seconds before the old one expires.
+TOKEN_REFRESH_MARGIN = 60.0
+DEFAULT_TOKEN_LIFETIME = 3600.0
+
+
+@dataclass
+class Credentials:
+    """Headers and query parameters that authenticate one request."""
+
+    headers: Dict[str, str] = field(default_factory=dict)
+    params: Dict[str, str] = field(default_factory=dict)
+
+
+class Auth:
+    def credentials(self, http: httpx.Client) -> Credentials:
+        raise NotImplementedError
+
+    async def acredentials(self, http: httpx.AsyncClient) -> Credentials:
+        raise NotImplementedError
+
+
+class _Static(Auth):
+    """Credentials that never change."""
+
+    def __init__(self, credentials: Credentials) -> None:
+        self._credentials = credentials
+
+    def credentials(self, http: httpx.Client) -> Credentials:
+        return self._credentials
+
+    async def acredentials(self, http: httpx.AsyncClient) -> Credentials:
+        return self._credentials
+
+
+def api_key_auth(location: str, name: str, key: str) -> Auth:
+    """An API key in a header, a query parameter or a cookie."""
+    if location == "query":
+        return _Static(Credentials(params={name: key}))
+    if location == "cookie":
+        return _Static(Credentials(headers={"Cookie": f"{name}={key}"}))
+    return _Static(Credentials(headers={name: key}))
+
+
+def bearer_auth(token: str) -> Auth:
+    return _Static(Credentials(headers={"Authorization": f"Bearer {token}"}))
+
+
+def basic_auth(username: str, password: str) -> Auth:
+    encoded = base64.b64encode(f"{username}:{password}".encode()).decode()
+    return _Static(Credentials(headers={"Authorization": f"Basic {encoded}"}))
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
+class OAuth2Auth(Auth):
+    """OAuth2 client credentials: trade the id and secret for a token, cache it, and fetch a
+    new one shortly before it expires."""
+
+    def __init__(
+        self,
+        *,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        scopes: List[str],
+    ) -> None:
+        self._token_url = token_url
+        self._form = {
+            "grant_type": "client_credentials",
+            "client_id": client_id,
+            "client_secret": client_secret,
+        }
+        if scopes:
+            self._form["scope"] = " ".join(scopes)
+        self._token: Optional[str] = None
+        self._expires_at = 0.0
+        self._lock = threading.Lock()
+        self._async_lock: Optional[asyncio.Lock] = None
+
+    def _fresh(self) -> bool:
+        return self._token is not None and _now() < self._expires_at - TOKEN_REFRESH_MARGIN
+
+    def _store(self, response: httpx.Response) -> str:
+        if not response.is_success:
+            raise make_error(response, "POST", self._token_url)
+        body: Any = response.json()
+        token = body.get("access_token") if isinstance(body, dict) else None
+        if not isinstance(token, str):
+            raise {{ c.error_base }}(
+                f"The token endpoint {self._token_url} returned no access_token. "
+                "Check token_url= and the client credentials."
+            )
+        lifetime = body.get("expires_in")
+        if not isinstance(lifetime, (int, float)):
+            lifetime = DEFAULT_TOKEN_LIFETIME
+        self._token = token
+        self._expires_at = _now() + float(lifetime)
+        return token
+
+    def _headers(self, token: str) -> Credentials:
+        return Credentials(headers={"Authorization": f"Bearer {token}"})
+
+    def credentials(self, http: httpx.Client) -> Credentials:
+        with self._lock:
+            if self._fresh() and self._token is not None:
+                return self._headers(self._token)
+            logger.debug("Fetching an OAuth2 token from %s", self._token_url)
+            try:
+                response = http.post(self._token_url, data=self._form)
+            except httpx.TransportError as exc:
+                raise APIConnectionError(
+                    f"Could not reach the token endpoint {self._token_url}: {exc}. "
+                    "Check token_url= and the network connection."
+                ) from exc
+            return self._headers(self._store(response))
+
+    async def acredentials(self, http: httpx.AsyncClient) -> Credentials:
+        if self._async_lock is None:
+            self._async_lock = asyncio.Lock()
+        async with self._async_lock:
+            if self._fresh() and self._token is not None:
+                return self._headers(self._token)
+            logger.debug("Fetching an OAuth2 token from %s", self._token_url)
+            try:
+                response = await http.post(self._token_url, data=self._form)
+            except httpx.TransportError as exc:
+                raise APIConnectionError(
+                    f"Could not reach the token endpoint {self._token_url}: {exc}. "
+                    "Check token_url= and the network connection."
+                ) from exc
+            return self._headers(self._store(response))

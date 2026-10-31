@@ -11,24 +11,30 @@ without reading the docs.
 from __future__ import annotations
 
 import json
+import time
+from email.utils import parsedate_to_datetime
 from typing import Any, Mapping, Optional
 
 import httpx
 
 
-class SarvamError(Exception):
+class LedgerError(Exception):
     """Base class for every error this SDK raises."""
 
 
-class APIConnectionError(SarvamError):
+class APIConnectionError(LedgerError):
     """The request never got a response (DNS, refused connection, dropped socket)."""
 
 
 class APITimeoutError(APIConnectionError):
-    """The server did not answer within the client's `timeout`."""
+    """The server did not answer within the timeout."""
 
 
-class APIError(SarvamError):
+class WebhookVerificationError(LedgerError):
+    """A webhook's signature, timestamp or headers didn't check out. Don't trust the payload."""
+
+
+class APIError(LedgerError):
     """The API answered with an error status."""
 
     hint: Optional[str] = None
@@ -67,18 +73,22 @@ class BadRequestError(APIError):
 
 
 class AuthenticationError(APIError):
-    hint = (
-        "The API key was missing or rejected. Set SARVAM_API_KEY to a valid key "
-        "or pass api_key= to Sarvam()."
-    )
+    hint = "The credentials were missing or rejected. Check them and call again. Pass api_key= (or set LEDGER_API_KEY), or client_id= and client_secret= (or set LEDGER_CLIENT_ID and LEDGER_CLIENT_SECRET)."
 
 
 class PermissionDeniedError(APIError):
-    hint = "The key is valid but not allowed to do this. Check its permissions or plan."
+    hint = "The credentials are valid but not allowed to do this. Check their permissions or plan."
 
 
 class NotFoundError(APIError):
     hint = "Check the ID or path. List the resource to find valid IDs."
+
+
+class ConflictError(APIError):
+    hint = (
+        "The request conflicts with the current state, or an idempotency key was reused "
+        "with a different body. Re-read the object, then retry with a new key."
+    )
 
 
 class UnprocessableEntityError(APIError):
@@ -101,16 +111,24 @@ _STATUS_ERRORS = {
     401: AuthenticationError,
     403: PermissionDeniedError,
     404: NotFoundError,
+    409: ConflictError,
     422: UnprocessableEntityError,
     429: RateLimitError,
 }
 
 
 def parse_retry_after(headers: Mapping[str, str]) -> Optional[float]:
-    """Read `Retry-After` when it is a number of seconds."""
+    """Read `Retry-After`, given as a number of seconds or as an HTTP date."""
+    value = headers.get("retry-after")
+    if value is None:
+        return None
     try:
-        return max(0.0, float(headers["retry-after"]))
-    except (KeyError, ValueError):
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        return max(0.0, parsedate_to_datetime(value).timestamp() - time.time())
+    except (TypeError, ValueError):
         return None
 
 

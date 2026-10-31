@@ -1,0 +1,485 @@
+"""Request plumbing shared by every method: auth, retries, idempotency keys, debug logging."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import random
+import time
+import uuid
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Mapping, Optional, Set, Union
+
+import httpx
+from typing_extensions import TypedDict
+
+from ._auth import Auth, Credentials
+from ._errors import (
+    APIConnectionError,
+    APITimeoutError,
+    make_error,
+    parse_retry_after,
+)
+from ._pagination import AsyncPage, Paging, SyncPage
+from ._response import APIResponse, parse_response
+from ._streaming import AsyncStream, Stream
+from ._utils import (
+    NotGiven,
+    encode,
+    encode_form,
+    encode_headers,
+    encode_query,
+    read_file,
+)
+from ._version import __version__
+
+logger = logging.getLogger("{{ c.pkg }}")
+if os.environ.get("{{ c.env_log }}", "").lower() == "debug":
+    logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    logger.setLevel(logging.DEBUG)
+
+DEFAULT_TIMEOUT = 60.0
+DEFAULT_MAX_RETRIES = 2
+MAX_RETRY_DELAY = 60.0
+USER_AGENT = f"{{ c.dist }}-python/{__version__}"
+{% if c.idempotency_header %}
+IDEMPOTENCY_HEADER = "{{ c.idempotency_header }}"
+{% endif %}
+
+# Logged requests show these as "[redacted]".
+_SECRET_HEADERS = {
+{% for h in c.secret_headers %}
+    {{ h | q }},
+{% endfor %}
+}
+{% if c.secret_params %}
+_SECRET_PARAMS = {
+{% for p in c.secret_params %}
+    {{ p | q }},
+{% endfor %}
+}
+{% else %}
+_SECRET_PARAMS: Set[str] = set()
+{% endif %}
+
+Timeout = Union[float, httpx.Timeout, None]
+
+
+class RequestOptions(TypedDict, total=False):
+    """Per-request overrides. Every method accepts them as keyword arguments."""
+
+    timeout: Timeout
+    max_retries: int
+    extra_headers: Mapping[str, str]
+    extra_query: Mapping[str, Any]
+    extra_body: Mapping[str, Any]
+{% if c.idempotency_header %}
+    idempotency_key: str
+{% endif %}
+
+
+@dataclass
+class _Request:
+    method: str
+    path: str
+    url: str
+    headers: Dict[str, str]
+    params: Dict[str, Any]
+    json: Any
+    data: Optional[Dict[str, Any]]
+    files: Optional[Dict[str, Any]]
+    content: Optional[bytes]
+    timeout: Timeout
+    max_retries: int
+
+
+def _has_header(headers: Mapping[str, Any], name: str) -> bool:
+    return any(key.lower() == name.lower() for key in headers)
+
+
+def retryable(status: int) -> bool:
+    return status in (408, 409, 429) or status >= 500
+
+
+def retry_delay(attempt: int, retry_after: Optional[float] = None) -> float:
+    """Honor `Retry-After`; otherwise back off exponentially (0.5s, 1s, 2s, ...) with jitter."""
+    if retry_after is not None:
+        return min(retry_after, MAX_RETRY_DELAY)
+    delay = min(0.5 * 2**attempt, 8.0)
+    return delay * (1 - 0.25 * random.random())
+
+
+def _redact(values: Mapping[str, Any], secret: Any) -> Dict[str, Any]:
+    return {k: "[redacted]" if k.lower() in secret else v for k, v in values.items()}
+
+
+class BaseClient:
+    def __init__(
+        self,
+        *,
+        auth: Optional[Auth],
+        base_url: str,
+        timeout: Timeout,
+        max_retries: int,
+        webhook_secret: Optional[str],
+    ) -> None:
+        self._auth = auth
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.webhook_secret = webhook_secret
+
+    def _build(
+        self,
+        creds: Credentials,
+        method: str,
+        path: str,
+        *,
+        options: RequestOptions,
+        accept: str = "application/json",
+        params: Optional[Mapping[str, Any]] = None,
+        headers: Optional[Mapping[str, Any]] = None,
+        json: Any = None,
+        data: Optional[Mapping[str, Any]] = None,
+        files: Optional[Mapping[str, Any]] = None,
+        content: Any = None,
+    ) -> _Request:
+        unknown = set(options) - set(RequestOptions.__annotations__)
+        if unknown:
+            raise TypeError(f"unexpected keyword argument(s): {', '.join(sorted(unknown))}")
+        request_headers = {"Accept": accept, "User-Agent": USER_AGENT, **creds.headers}
+        request_headers.update(encode_headers(headers))
+        extra_headers = dict(options.get("extra_headers", {}))
+{% if c.idempotency_header %}
+        key = options.get("idempotency_key")
+        if key is not None:
+            request_headers[IDEMPOTENCY_HEADER] = key
+        elif method != "GET" and not _has_header(extra_headers, IDEMPOTENCY_HEADER):
+            # One key per call, reused by every retry of it.
+            request_headers[IDEMPOTENCY_HEADER] = str(uuid.uuid4())
+{% endif %}
+        request_headers.update(extra_headers)
+
+        query = {**creds.params, **encode_query(params), **encode_query(options.get("extra_query"))}
+        body = encode(json) if json is not None else None
+        form = encode_form(data) if data is not None else None
+        uploads = None
+        if files is not None:
+            uploads = {
+                name: read_file(file)
+                for name, file in files.items()
+                if file is not None and not isinstance(file, NotGiven)
+            }
+        raw = None
+        if content is not None and not isinstance(content, NotGiven):
+            raw = read_file(content)[1]
+        extra_body = options.get("extra_body")
+        if extra_body:
+            if body is not None or (form is None and uploads is None and raw is None):
+                body = {**(body or {}), **encode(extra_body)}
+            else:
+                form = {**(form or {}), **encode_form(extra_body)}
+        if raw is not None and not _has_header(request_headers, "Content-Type"):
+            request_headers["Content-Type"] = "application/octet-stream"
+        return _Request(
+            method=method,
+            path=path,
+            url=self.base_url + path,
+            headers=request_headers,
+            params=query,
+            json=body,
+            data=form or None,
+            files=uploads or None,
+            content=raw,
+            timeout=options["timeout"] if "timeout" in options else self.timeout,
+            max_retries=options.get("max_retries", self.max_retries),
+        )
+
+    def _log_request(self, req: _Request) -> None:
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Request: %s %s params=%s headers=%s",
+                req.method,
+                req.url,
+                _redact(req.params, _SECRET_PARAMS),
+                _redact(req.headers, _SECRET_HEADERS),
+            )
+
+    def _log_response(self, response: httpx.Response) -> None:
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Response: %s %s request_id=%s",
+                response.status_code,
+                response.reason_phrase,
+                response.headers.get("x-request-id"),
+            )
+
+    def _timeout_error(self, req: _Request, exc: Exception) -> APITimeoutError:
+        return APITimeoutError(
+            f"{req.method} {req.path} timed out. "
+            "Raise timeout= on the client or the request, or retry later."
+        )
+
+    def _connection_error(self, req: _Request, exc: Exception) -> APIConnectionError:
+        return APIConnectionError(
+            f"{req.method} {req.path} could not reach {self.base_url}: {exc}. "
+            "Check the network connection and base_url."
+        )
+
+
+class SyncAPIClient(BaseClient):
+    def __init__(
+        self,
+        *,
+        http_client: Optional[httpx.Client],
+        auth: Optional[Auth],
+        base_url: str,
+        timeout: Timeout,
+        max_retries: int,
+        webhook_secret: Optional[str],
+    ) -> None:
+        super().__init__(
+            auth=auth,
+            base_url=base_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            webhook_secret=webhook_secret,
+        )
+        self._owns_http_client = http_client is None
+        self._http = http_client or httpx.Client()
+
+    def close(self) -> None:
+        """Close the underlying HTTP client, unless you supplied your own."""
+        if self._owns_http_client:
+            self._http.close()
+
+    def _credentials(self) -> Credentials:
+        return self._auth.credentials(self._http) if self._auth else Credentials()
+
+    def _send(self, req: _Request, *, stream: bool = False) -> httpx.Response:
+        """Send a request, retrying rate limits, server errors and connection failures."""
+        for attempt in range(req.max_retries + 1):
+            final = attempt == req.max_retries
+            request = self._http.build_request(
+                req.method,
+                req.url,
+                headers=req.headers,
+                params=req.params or None,
+                json=req.json,
+                data=req.data,
+                files=req.files,
+                content=req.content,
+                timeout=req.timeout,
+            )
+            self._log_request(req)
+            try:
+                response = self._http.send(request, stream=stream)
+            except httpx.TimeoutException as exc:
+                if final:
+                    raise self._timeout_error(req, exc) from exc
+                delay = retry_delay(attempt)
+            except httpx.TransportError as exc:
+                if final:
+                    raise self._connection_error(req, exc) from exc
+                delay = retry_delay(attempt)
+            else:
+                self._log_response(response)
+                if response.is_success:
+                    return response
+                if stream:
+                    response.read()
+                response.close()
+                if final or not retryable(response.status_code):
+                    raise make_error(response, req.method, req.path)
+                delay = retry_delay(attempt, parse_retry_after(response.headers))
+            time.sleep(delay)
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    def _request(
+        self, method: str, path: str, *, cast_to: Any, raw: bool = False, **request: Any
+    ) -> Any:
+        req = self._build(self._credentials(), method, path, **request)
+        response = self._send(req)
+        parsed = parse_response(cast_to, response)
+        return APIResponse(parsed, response) if raw else parsed
+
+    def _paginate(
+        self,
+        method: str,
+        path: str,
+        *,
+        paging: Paging,
+        item_type: Any,
+        response_type: Any,
+        raw: bool = False,
+        **request: Any,
+    ) -> Any:
+        req = self._build(self._credentials(), method, path, **request)
+        response = self._send(req)
+        page: SyncPage[Any] = SyncPage(
+            client=self,
+            method=method,
+            path=path,
+            request=request,
+            paging=paging,
+            item_type=item_type,
+            response_type=response_type,
+            http_response=response,
+        )
+        return APIResponse(page, response) if raw else page
+
+    def _stream(
+        self, method: str, path: str, *, cast_to: Any, raw: bool = False, **request: Any
+    ) -> Any:
+        req = self._build(
+            self._credentials(), method, path, accept="text/event-stream", **request
+        )
+        response = self._send(req, stream=True)
+        stream: Stream[Any] = Stream(cast_to=cast_to, response=response)
+        return APIResponse(stream, response) if raw else stream
+
+    def _download(self, method: str, path: str, *, dest: Any, **request: Any) -> None:
+        """Stream a response to `dest`, so a large file never sits in memory."""
+        req = self._build(self._credentials(), method, path, **request)
+        response = self._send(req, stream=True)
+        partial = Path(os.fspath(dest) + ".part")
+        try:
+            with partial.open("wb") as f:
+                for chunk in response.iter_bytes():
+                    f.write(chunk)
+            os.replace(partial, dest)
+        except BaseException:
+            partial.unlink(missing_ok=True)
+            raise
+        finally:
+            response.close()
+
+
+class AsyncAPIClient(BaseClient):
+    def __init__(
+        self,
+        *,
+        http_client: Optional[httpx.AsyncClient],
+        auth: Optional[Auth],
+        base_url: str,
+        timeout: Timeout,
+        max_retries: int,
+        webhook_secret: Optional[str],
+    ) -> None:
+        super().__init__(
+            auth=auth,
+            base_url=base_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            webhook_secret=webhook_secret,
+        )
+        self._owns_http_client = http_client is None
+        self._http = http_client or httpx.AsyncClient()
+
+    async def aclose(self) -> None:
+        """Close the underlying HTTP client, unless you supplied your own."""
+        if self._owns_http_client:
+            await self._http.aclose()
+
+    async def _credentials(self) -> Credentials:
+        return await self._auth.acredentials(self._http) if self._auth else Credentials()
+
+    async def _send(self, req: _Request, *, stream: bool = False) -> httpx.Response:
+        """Send a request, retrying rate limits, server errors and connection failures."""
+        for attempt in range(req.max_retries + 1):
+            final = attempt == req.max_retries
+            request = self._http.build_request(
+                req.method,
+                req.url,
+                headers=req.headers,
+                params=req.params or None,
+                json=req.json,
+                data=req.data,
+                files=req.files,
+                content=req.content,
+                timeout=req.timeout,
+            )
+            self._log_request(req)
+            try:
+                response = await self._http.send(request, stream=stream)
+            except httpx.TimeoutException as exc:
+                if final:
+                    raise self._timeout_error(req, exc) from exc
+                delay = retry_delay(attempt)
+            except httpx.TransportError as exc:
+                if final:
+                    raise self._connection_error(req, exc) from exc
+                delay = retry_delay(attempt)
+            else:
+                self._log_response(response)
+                if response.is_success:
+                    return response
+                if stream:
+                    await response.aread()
+                await response.aclose()
+                if final or not retryable(response.status_code):
+                    raise make_error(response, req.method, req.path)
+                delay = retry_delay(attempt, parse_retry_after(response.headers))
+            await asyncio.sleep(delay)
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    async def _request(
+        self, method: str, path: str, *, cast_to: Any, raw: bool = False, **request: Any
+    ) -> Any:
+        req = self._build(await self._credentials(), method, path, **request)
+        response = await self._send(req)
+        parsed = parse_response(cast_to, response)
+        return APIResponse(parsed, response) if raw else parsed
+
+    async def _paginate(
+        self,
+        method: str,
+        path: str,
+        *,
+        paging: Paging,
+        item_type: Any,
+        response_type: Any,
+        raw: bool = False,
+        **request: Any,
+    ) -> Any:
+        req = self._build(await self._credentials(), method, path, **request)
+        response = await self._send(req)
+        page: AsyncPage[Any] = AsyncPage(
+            client=self,
+            method=method,
+            path=path,
+            request=request,
+            paging=paging,
+            item_type=item_type,
+            response_type=response_type,
+            http_response=response,
+        )
+        return APIResponse(page, response) if raw else page
+
+    async def _stream(
+        self, method: str, path: str, *, cast_to: Any, raw: bool = False, **request: Any
+    ) -> Any:
+        req = self._build(
+            await self._credentials(), method, path, accept="text/event-stream", **request
+        )
+        response = await self._send(req, stream=True)
+        stream: AsyncStream[Any] = AsyncStream(cast_to=cast_to, response=response)
+        return APIResponse(stream, response) if raw else stream
+
+    async def _download(self, method: str, path: str, *, dest: Any, **request: Any) -> None:
+        """Stream a response to `dest`, so a large file never sits in memory."""
+        req = self._build(await self._credentials(), method, path, **request)
+        response = await self._send(req, stream=True)
+        partial = Path(os.fspath(dest) + ".part")
+        try:
+            with partial.open("wb") as f:
+                async for chunk in response.aiter_bytes():
+                    f.write(chunk)
+            os.replace(partial, dest)
+        except BaseException:
+            partial.unlink(missing_ok=True)
+            raise
+        finally:
+            await response.aclose()

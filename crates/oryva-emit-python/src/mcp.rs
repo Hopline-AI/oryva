@@ -20,6 +20,7 @@ pub struct McpCtx {
     pub stdlib: Vec<String>,
     pub third_party: Vec<String>,
     pub has_binary: bool,
+    pub has_pages: bool,
     pub tools: Vec<ToolItem>,
 }
 
@@ -40,7 +41,7 @@ pub struct ToolItem {
 pub fn ctx(api: &Api, opts: &Options) -> McpCtx {
     let mut uses = Uses::default();
     uses.typing
-        .extend(["Annotated", "Any", "Iterator", "Optional"]);
+        .extend(["Annotated", "Any", "Dict", "Iterator", "Optional"]);
     let mut tools = Vec::new();
     for r in &api.resources {
         for m in &r.methods {
@@ -94,7 +95,6 @@ pub fn ctx(api: &Api, opts: &Options) -> McpCtx {
             format!("from {}.types import {}", opts.package, named.join(", ")),
         ));
     }
-    third.sort();
     McpCtx {
         common: common(api, opts),
         mcp_pkg: format!("{}_mcp", opts.package),
@@ -104,6 +104,11 @@ pub fn ctx(api: &Api, opts: &Options) -> McpCtx {
         stdlib,
         third_party: third.into_iter().map(|(_, line)| line).collect(),
         has_binary,
+        has_pages: api
+            .resources
+            .iter()
+            .flat_map(|r| &r.methods)
+            .any(|m| m.pagination.is_some()),
         tools,
     }
 }
@@ -117,7 +122,7 @@ fn title(m: &Method, resource: &str) -> String {
 
 fn tool(api: &Api, resource: &str, m: &Method, uses: &mut Uses) -> ToolItem {
     let args = method_args(api, m);
-    let params = args
+    let mut params: Vec<String> = args
         .iter()
         .map(|a| {
             let mut ann = annotation(a.ty, a.required, uses, Target::Mcp);
@@ -139,44 +144,68 @@ fn tool(api: &Api, resource: &str, m: &Method, uses: &mut Uses) -> ToolItem {
         })
         .collect();
 
-    let kwargs: Vec<String> = args.iter().map(|a| format!("{0}={0}", a.ident)).collect();
-    let path = format!("_sdk().{resource}.{}", m.name);
-    let call = if kwargs.len() <= 3 {
-        vec![format!("{path}({})", kwargs.join(", "))]
-    } else {
-        let mut v = vec![format!("{path}(")];
-        v.extend(kwargs.iter().map(|k| format!("    {k},")));
-        v.push(")".into());
-        v
-    };
+    // Omitted optional arguments must not reach the SDK as `None`, which it would send as null.
+    let mut kwargs: Vec<String> = args
+        .iter()
+        .filter(|a| a.required)
+        .map(|a| format!("{0}={0}", a.ident))
+        .collect();
+    let optional: Vec<String> = args
+        .iter()
+        .filter(|a| !a.required)
+        .map(|a| format!("{0}={0}", a.ident))
+        .collect();
+    if !optional.is_empty() {
+        kwargs.push(format!("**_given({})", optional.join(", ")));
+    }
+    let sdk_call = format!("_sdk().{resource}.{}({})", m.name, kwargs.join(", "));
 
-    let mut call = call;
     let mut text = description(m);
-    let (has_result, returns) = match &m.response {
-        ResponseBody::Empty => (
-            false,
-            "return \"Done. The API returned no content.\"".into(),
-        ),
-        ResponseBody::Text => (true, "return result".into()),
-        ResponseBody::Json { .. } => (true, "return _to_json(result)".into()),
-        ResponseBody::Binary { content_type } => {
-            text.push_str(&format!(
-                "\n\nThe response is binary ({content_type}). It is saved to a file; the result gives its path and size."
-            ));
-            (
-                true,
+    let mut call = vec![format!("result = {sdk_call}")];
+    let returns: String = if m.pagination.is_some() {
+        text.push_str(
+            "\n\nReturns one page of results. When `next_page` in the result is not null, call this tool again with those arguments added to get the next page.",
+        );
+        "return _page_json(result)".into()
+    } else {
+        match &m.response {
+            ResponseBody::Empty => {
+                call = vec![sdk_call.clone()];
+                "return \"Done. The API returned no content.\"".into()
+            }
+            ResponseBody::Text => "return result".into(),
+            ResponseBody::Json { .. } => "return _to_json(result)".into(),
+            ResponseBody::Binary { content_type } => {
+                text.push_str(&format!(
+                    "\n\nThe response is binary ({content_type}). It is saved to a file; the result gives its path and size."
+                ));
                 format!(
                     "return _save_binary(result, {}, {})",
                     py_str(&format!("{resource}_{}", m.name)),
                     py_str(content_type)
-                ),
-            )
+                )
+            }
+            ResponseBody::EventStream { .. } => {
+                text.push_str(
+                    "\n\nReads up to `max_events` events, then closes the stream and returns them.",
+                );
+                params.push(
+                    "max_events: Annotated[int, Field(ge=1, description=\"Stop after this many events.\")] = 10"
+                        .into(),
+                );
+                uses.typing.insert("List");
+                call = vec![
+                    "events: List[Any] = []".into(),
+                    format!("with {sdk_call} as stream:"),
+                    "    for event in stream:".into(),
+                    "        events.append(event)".into(),
+                    "        if len(events) >= max_events:".into(),
+                    "            break".into(),
+                ];
+                "return _to_json({\"events\": events, \"count\": len(events)})".into()
+            }
         }
     };
-
-    if has_result {
-        call[0] = format!("result = {}", call[0]);
-    }
 
     ToolItem {
         name: format!("{resource}_{}", m.name),

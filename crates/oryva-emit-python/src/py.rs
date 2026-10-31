@@ -2,7 +2,8 @@
 
 use std::collections::BTreeSet;
 
-use oryva_ir::{Api, Method, ParamLocation, ResponseBody, Shape, TypeRef};
+use oryva_ir::{Api, BodyEncoding, Method, ParamLocation, ResponseBody, Shape, TypeRef};
+use serde_json::Value;
 
 /// Names a rendered snippet needs imported.
 #[derive(Default)]
@@ -45,6 +46,37 @@ pub fn py_str(s: &str) -> String {
     )
 }
 
+/// A Python literal for a JSON value.
+pub fn py_value(v: &Value) -> String {
+    match v {
+        Value::Null => "None".into(),
+        Value::Bool(true) => "True".into(),
+        Value::Bool(false) => "False".into(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => py_str(s),
+        Value::Array(a) => format!(
+            "[{}]",
+            a.iter().map(py_value).collect::<Vec<_>>().join(", ")
+        ),
+        Value::Object(o) => format!(
+            "{{{}}}",
+            o.iter()
+                .map(|(k, v)| format!("{}: {}", py_str(k), py_value(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+/// `("a", "b")`, with the trailing comma a one-element tuple needs.
+pub fn py_tuple(items: &[String]) -> String {
+    let parts: Vec<_> = items.iter().map(|i| py_str(i)).collect();
+    match parts.as_slice() {
+        [one] => format!("({one},)"),
+        many => format!("({})", many.join(", ")),
+    }
+}
+
 pub fn render(ty: &TypeRef, uses: &mut Uses, target: Target) -> String {
     match ty {
         TypeRef::String { format } => match format.as_deref() {
@@ -80,7 +112,7 @@ pub fn render(ty: &TypeRef, uses: &mut Uses, target: Target) -> String {
             uses.typing.insert("Dict");
             format!("Dict[str, {}]", render(values, uses, target))
         }
-        TypeRef::Enum { values } => literal(values, uses),
+        TypeRef::Enum { values } => enum_type(values, uses),
         TypeRef::Named { name } => {
             uses.named.insert(name.clone());
             name.clone()
@@ -97,13 +129,21 @@ pub fn render(ty: &TypeRef, uses: &mut Uses, target: Target) -> String {
     }
 }
 
-pub fn literal(values: &[String], uses: &mut Uses) -> String {
-    if values.is_empty() {
-        return "str".into();
-    }
-    uses.typing.insert("Literal");
-    let parts: Vec<_> = values.iter().map(|v| py_str(v)).collect();
-    format!("Literal[{}]", parts.join(", "))
+/// An enum that keeps working when the server sends a value the spec doesn't list:
+/// `Union[Literal["a", "b"], str]`. Editors still complete the known values.
+pub fn enum_type(values: &[Value], uses: &mut Uses) -> String {
+    let fallback = match values {
+        [] => return "str".into(),
+        v if v.iter().all(Value::is_i64) => "int",
+        v if v.iter().all(Value::is_string) => "str",
+        _ => {
+            uses.typing.insert("Any");
+            "Any"
+        }
+    };
+    uses.typing.extend(["Literal", "Union"]);
+    let parts: Vec<_> = values.iter().map(py_value).collect();
+    format!("Union[Literal[{}], {fallback}]", parts.join(", "))
 }
 
 pub fn optional(inner: String, uses: &mut Uses) -> String {
@@ -111,7 +151,7 @@ pub fn optional(inner: String, uses: &mut Uses) -> String {
     format!("Optional[{inner}]")
 }
 
-/// Annotation for something that may be omitted: `Optional[T]` unless it already is.
+/// Annotation for a model field: `Optional[T]` unless it is required or already nullable.
 pub fn annotation(ty: &TypeRef, required: bool, uses: &mut Uses, target: Target) -> String {
     let rendered = render(ty, uses, target);
     if required || matches!(ty, TypeRef::Nullable { .. }) {
@@ -138,10 +178,11 @@ pub struct Arg<'a> {
     pub ty: &'a TypeRef,
     pub required: bool,
     pub description: Option<&'a str>,
+    pub default: Option<&'a Value>,
 }
 
 /// Path, query and header params, then the body's fields flattened (a non-object body becomes
-/// `body`). Required arguments come first.
+/// `body`, or `file` for raw bytes). Required arguments come first.
 pub fn method_args<'a>(api: &'a Api, m: &'a Method) -> Vec<Arg<'a>> {
     let mut args: Vec<Arg> = Vec::new();
     for loc in [
@@ -161,6 +202,7 @@ pub fn method_args<'a>(api: &'a Api, m: &'a Method) -> Vec<Arg<'a>> {
                 ty: &p.ty,
                 required: p.required,
                 description: p.description.as_deref(),
+                default: p.default.as_ref(),
             });
         }
     }
@@ -180,14 +222,20 @@ pub fn method_args<'a>(api: &'a Api, m: &'a Method) -> Vec<Arg<'a>> {
                 ty: &f.ty,
                 required: f.required && body.required,
                 description: f.description.as_deref(),
+                default: f.default.as_ref(),
             })),
             None => args.push(Arg {
-                ident: "body",
+                ident: if body.encoding == BodyEncoding::Binary {
+                    "file"
+                } else {
+                    "body"
+                },
                 wire: "",
                 place: Place::Body,
                 ty: &body.ty,
                 required: body.required,
                 description: None,
+                default: None,
             }),
         }
     }
@@ -195,13 +243,14 @@ pub fn method_args<'a>(api: &'a Api, m: &'a Method) -> Vec<Arg<'a>> {
     args
 }
 
-/// `ident: Annotation` or `ident: Annotation = None`.
+/// `ident: Annotation` or `ident: Annotation | NotGiven = NOT_GIVEN`. Omitting an optional
+/// argument sends nothing; passing `None` sends `null`.
 pub fn arg_decl(a: &Arg, uses: &mut Uses, target: Target) -> String {
-    let ann = annotation(a.ty, a.required, uses, target);
+    let ann = render(a.ty, uses, target);
     if a.required {
         format!("{}: {ann}", a.ident)
     } else {
-        format!("{}: {ann} = None", a.ident)
+        format!("{}: {ann} | NotGiven = NOT_GIVEN", a.ident)
     }
 }
 
@@ -245,7 +294,7 @@ pub fn docstring(text: &str, indent: usize) -> String {
     out
 }
 
-/// `from typing import ...` etc. as source lines.
+/// `from typing import ...` etc. as source lines. `write_all` runs `ruff` to sort them.
 pub fn import_lines(uses: &Uses) -> Vec<String> {
     let mut out = Vec::new();
     if !uses.datetime.is_empty() {
@@ -253,9 +302,7 @@ pub fn import_lines(uses: &Uses) -> Vec<String> {
         out.push(format!("from datetime import {}", names.join(", ")));
     }
     if !uses.typing.is_empty() {
-        // isort order: CONSTANTS, then Classes.
-        let mut names: Vec<_> = uses.typing.iter().copied().collect();
-        names.sort_by_key(|n| (!n.chars().all(|c| c.is_ascii_uppercase() || c == '_'), *n));
+        let names: Vec<_> = uses.typing.iter().copied().collect();
         out.push(format!("from typing import {}", names.join(", ")));
     }
     out

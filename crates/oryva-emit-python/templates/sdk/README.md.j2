@@ -12,23 +12,81 @@ Requires Python 3.9 or newer.
 
 ## Usage
 
-{% if c.env_key %}
-Set your API key in the environment (`export {{ c.env_key }}=...`) or pass `api_key=` to the client.
-
-{% endif %}
 ```python
 from {{ c.pkg }} import {{ c.class }}
 
 {{ c.example }}
 ```
 
-Every method takes keyword arguments and returns a typed `pydantic` model. The client retries
-rate limits, server errors and dropped connections (`max_retries=2` by default) and raises
-`{{ c.pkg }}.APIError` subclasses with a message that says how to fix the problem.
+Every method takes keyword arguments and returns typed `pydantic` models. `{{ c.async_class }}` has the
+same methods as coroutines.
+
+## Authentication and environments
+
+{% if c.ctor_args %}
+The client uses the first scheme whose credentials you pass or set in the environment:
+
+{% for a in c.ctor_args %}
+- `{{ a.ident }}=`: {{ a.doc }} Falls back to `{{ a.env }}`.
+{% endfor %}
+
+{% endif %}
+{% if c.servers %}
+Pick a named environment with `{{ c.class }}(environment="{{ c.servers[-1].name }}")`:
+{% for s in c.servers %}
+`{{ s.name }}` ({{ s.url }}){% if not loop.last %}, {% endif %}
+{% endfor %}
+. Pass `base_url=` or set `{{ c.env_base_url }}` to use another host.
+{% else %}
+Pass `base_url=` or set `{{ c.env_base_url }}`.
+{% endif %}
+
+## Requests
+
+Failures that can succeed on a second try (408, 409, 429, 5xx, dropped connections) are retried
+with exponential backoff, honouring `Retry-After`; `max_retries=2` by default. Errors are
+`{{ c.pkg }}.APIError` subclasses whose message says how to fix the problem.
+
+Every method accepts per-request options as keyword arguments:
 
 ```python
-with {{ c.class }}(timeout=30, max_retries=4) as client:
-    ...
+client.{{ c.resources[0].module }}.{{ "list" }}(
+    timeout=10, max_retries=0, extra_headers={"X-Debug": "1"}, extra_query={"a": "b"}, extra_body={"c": "d"},
+)
 ```
 
-Set `{{ c.env_base_url }}` or pass `base_url=` to point the client somewhere else.
+Leave an optional argument out to send nothing; pass `None` to send `null`. Unknown enum values
+and union variants are kept rather than rejected.
+{% if c.idempotency_header %}
+
+Every non-GET request gets a fresh `{{ c.idempotency_header }}`, reused by its retries. Pass
+`idempotency_key="..."` to choose your own.
+{% endif %}
+
+`client.with_raw_response.<resource>.<method>(...)` returns the status, headers and parsed body:
+
+```python
+response = client.with_raw_response.{{ c.resources[0].module }}.{{ "list" }}()
+print(response.status_code, response.headers["x-request-id"], response.parsed)
+```
+
+Set `{{ c.env_log }}=debug` to log requests, with credentials redacted.
+
+## Pagination, streaming and files
+
+List methods return a page. Iterate it to walk every item, or use `page.items`,
+`page.has_next_page()` and `page.next_page()`.
+
+Event-stream methods return a stream; close it early with `with` or `.close()`. Downloads return
+`bytes`; the `*_to_file(dest, ...)` variant streams them to disk. Uploads take bytes, a path or an
+open file.
+{% if c.webhook_secret_env %}
+
+## Webhooks
+
+```python
+event = client.webhooks.unwrap(request_body, request_headers)  # raises WebhookVerificationError
+```
+
+The secret comes from `webhook_secret=` or `{{ c.webhook_secret_env }}`.
+{% endif %}

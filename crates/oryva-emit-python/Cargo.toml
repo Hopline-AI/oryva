@@ -8,8 +8,8 @@ rust-version.workspace = true
 oryva-ir.workspace = true
 minijinja = "2"
 serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 insta.workspace = true
 tempfile = "3"
