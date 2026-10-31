@@ -216,6 +216,27 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = do_POST = do_PATCH = do_DELETE = do_PUT = handle_any
 
 
+# ---- additions by the Python SDK smoke test (additive; nothing above is changed) ----
+# `x-stub-retry-after-date: <seconds>` turns the `Retry-After: 0` of injected failures into an
+# HTTP date that many seconds from now. Also records `x-api-key` and `cookie` request headers.
+import time as _time  # noqa: E402
+from email.utils import formatdate as _formatdate  # noqa: E402
+
+RECORDED_HEADERS.extend(["x-api-key", "cookie"])
+_send_json = Handler.send_json
+
+
+def _send_json_with_date(self, status, body, headers=None):
+    seconds = self.headers.get("x-stub-retry-after-date")
+    if seconds and headers and "Retry-After" in headers:
+        headers = {**headers, "Retry-After": _formatdate(_time.time() + int(seconds), usegmt=True)}
+    _send_json(self, status, body, headers)
+
+
+Handler.send_json = _send_json_with_date
+# ---- end of additions ----
+
+
 server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 print(server.server_address[1], flush=True)
 server.serve_forever()

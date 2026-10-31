@@ -18,12 +18,17 @@ Requires Python 3.10 or newer.
 
 ## Run
 
-The server speaks MCP over stdio.
+The server speaks MCP over stdio. It reads credentials from environment variables, for whichever
+auth scheme you use:
+
+{% for a in c.ctor_args %}
+- `{{ a.env }}`: {{ a.doc }}
+{% endfor %}
 
 ```sh
-{% if c.env_key %}
-export {{ c.env_key }}=...
-{% endif %}
+{% for a in c.ctor_args[:1] %}
+export {{ a.env }}=...
+{% endfor %}
 {{ c.mcp_dist }}
 ```
 
@@ -33,14 +38,16 @@ Example client configuration:
 {
   "mcpServers": {
     "{{ c.pkg }}": {
-      "command": "{{ c.mcp_dist }}"{% if c.env_key %},
-      "env": { "{{ c.env_key }}": "..." }{% endif %}
+      "command": "{{ c.mcp_dist }}"{% for a in c.ctor_args[:1] %},
+      "env": { "{{ a.env }}": "..." }{% endfor %}
 
     }
   }
 }
 ```
 
-Tool results are JSON. Binary responses are written to the directory in
-`{{ c.env_output_dir }}` (a temporary directory by default) and the tool returns the file's path
-and size. Set `{{ c.env_base_url }}` to point the server at a different API host.
+Tool results are JSON. List tools return one page and a `next_page` object: pass its entries as
+arguments to get the next page (it is `null` on the last page). The stream tool reads up to
+`max_events` events (10 by default) and closes the stream. Binary responses are written to the
+directory in `{{ c.env_output_dir }}` (a temporary directory by default) and the tool returns the
+file's path and size. Set `{{ c.env_base_url }}` to point the server at a different API host.

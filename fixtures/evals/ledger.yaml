@@ -1,0 +1,38 @@
+# Live agent tasks against the MCP server oryva generates for the ledger API
+# (fixtures/specs/ledger.yaml), backed by the canned stub in scripts/stub_ledger.py.
+# Run with scripts/live-eval.sh.
+server:
+  command: ${ORYVA_VENV}/bin/ledger-mcp
+  env:
+    LEDGER_API_KEY: test-key
+    LEDGER_BASE_URL: ${LEDGER_BASE_URL}
+max_turns: 10
+tasks:
+  - id: customer-invoices
+    prompt: Find the customer whose email is c3@example.com and tell me their ID and which invoices they have.
+    expect:
+      tools_called: [customers_list]
+      answer_contains: ["cus_3"]
+      max_tool_errors: 0
+      max_tool_calls: 5
+  - id: count-customers
+    prompt: How many customers are there in total? Request at most 2 customers per call, and reply with the number.
+    expect:
+      tools_called: [customers_list]
+      answer_contains: ["5"]
+      max_tool_errors: 0
+      max_tool_calls: 5
+  - id: refund-payment
+    prompt: Refund 300 on payment pay_1. Check the payment first.
+    expect:
+      tools_called: [payments_get, refunds_create]
+      answer_contains: ["300"]
+      max_tool_errors: 0
+      max_tool_calls: 4
+  - id: summarize-events
+    prompt: Read 2 events from the account event stream and summarize what happened.
+    expect:
+      tools_called: [events_stream]
+      answer_contains: ["card_declined"]
+      max_tool_errors: 0
+      max_tool_calls: 3

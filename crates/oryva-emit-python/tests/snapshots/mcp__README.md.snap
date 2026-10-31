@@ -37,9 +37,16 @@ Requires Python 3.10 or newer.
 
 ## Run
 
-The server speaks MCP over stdio.
+The server speaks MCP over stdio. It reads credentials from environment variables, for whichever
+auth scheme you use:
+
+- `LEDGER_API_KEY`: Bearer token.
+- `LEDGER_CLIENT_ID`: OAuth2 client ID.
+- `LEDGER_CLIENT_SECRET`: OAuth2 client secret.
+- `LEDGER_OAUTH_TOKEN_URL`: OAuth2 token endpoint. Defaults to https://auth.ledger.example/oauth/token.
 
 ```sh
+export LEDGER_API_KEY=...
 ledger-mcp
 ```
 
@@ -49,12 +56,15 @@ Example client configuration:
 {
   "mcpServers": {
     "ledger": {
-      "command": "ledger-mcp"
+      "command": "ledger-mcp",
+      "env": { "LEDGER_API_KEY": "..." }
     }
   }
 }
 ```
 
-Tool results are JSON. Binary responses are written to the directory in
-`LEDGER_MCP_OUTPUT_DIR` (a temporary directory by default) and the tool returns the file's path
-and size. Set `LEDGER_BASE_URL` to point the server at a different API host.
+Tool results are JSON. List tools return one page and a `next_page` object: pass its entries as
+arguments to get the next page (it is `null` on the last page). The stream tool reads up to
+`max_events` events (10 by default) and closes the stream. Binary responses are written to the
+directory in `LEDGER_MCP_OUTPUT_DIR` (a temporary directory by default) and the tool returns the
+file's path and size. Set `LEDGER_BASE_URL` to point the server at a different API host.
