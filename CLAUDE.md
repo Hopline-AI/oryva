@@ -112,7 +112,7 @@ Each language uses its own idioms, but every SDK does all of this:
 | `crates/oryva-emit-typescript` | IR → TypeScript SDK | |
 | `crates/oryva-eval` | Agent tests against any MCP server | |
 | `crates/oryva` | CLI: `oryva generate`, `oryva eval` | |
-| `fixtures/specs` | Engine fixtures. `ledger.yaml` (fictional billing API) exercises every feature; extend it when you add one. | |
+| `fixtures/specs` | Engine fixtures. `ledger.yaml` (fictional billing API) exercises every feature; extend it when you add one. `edge-cases.yaml` holds nasty-but-valid patterns found in real specs; add one for every real-spec bug. | |
 | `examples/<company>` | Material for one outreach target. Never used by tests. | |
 
 ## Testing

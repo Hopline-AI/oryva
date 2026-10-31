@@ -85,10 +85,14 @@ on it (paging, a checked refund, an event stream) at about 13k tokens per task.
 
 ## Next — prove it on real specs
 
-- [ ] Run `oryva generate` plus `mypy` and `tsc` on 5–10 large public specs (Stripe, GitHub,
-  OpenAI, Twilio and others); fix what breaks in the parser and emitters
-- [ ] IR: a literal type for `const`, so discriminators don't depend on single-value enums; keep a
-  binary body's content type
+- [x] Run `oryva generate` plus `mypy` and `tsc` on large public specs
+  (`scripts/real-specs.sh`: Stripe, GitHub, OpenAI, Twilio, Asana, Spotify, Box). The first run
+  generated none of them; 12 root causes later all 7 generate and type-check in both languages,
+  Stripe in 8 s and GitHub in 11 s. Regression cases live in `fixtures/specs/edge-cases.yaml`.
+- [x] IR: keep a binary body's content type (IR v3)
+- [ ] IR: a literal type for `const`, so discriminators don't depend on single-value enums
+- [ ] Widen the stress test: more specs (OpenAPI 3.1 ones, Swagger 2.0 via conversion, external
+  `$ref`s via bundling), and run the generated SDKs' smoke checks, not only type checks
 
 ## Wave 2 — tests, docs and the agent surface
 
