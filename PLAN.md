@@ -17,6 +17,30 @@ Then go further:
 - A way in for teams leaving Stainless: import `stainless.yml` and prove the public API didn't
   change.
 
+## v1.0 — what "finished" means
+
+A senior engineer could ship oryva as a product when all of this holds. Everything else is v1.x.
+
+1. **Inputs.** Single-file OpenAPI 3.0 and 3.1 specs. At least 10 large public specs generate,
+   type-check, import cleanly at runtime, and their MCP servers lint with zero errors. Unsupported
+   inputs (Swagger 2.0, multi-file specs) fail with a message that says what to do.
+2. **Outputs.** Python SDK (sync and async), TypeScript SDK and Python MCP server, each meeting
+   the full behaviour contract, each checked end to end against a stub.
+3. **Every generated SDK ships ready to publish:** a README with an example per method, a test
+   suite runnable with the language's own test runner, a release workflow (PyPI trusted
+   publishing, npm with provenance), and a changelog.
+4. **Maintenance.** An `oryva.yml` config (names, version, targets, output paths). Regeneration
+   removes stale files, never silently overwrites a hand-edited generated file, and never touches
+   files it didn't generate. `oryva diff` reports breaking changes and the next semver version.
+   A GitHub Action regenerates on spec change and opens a PR.
+5. **Agent layer.** `oryva eval` lint and live runs; `llms.txt` with each SDK.
+6. **Project.** CI on this repo runs verify and the smoke tests on every PR; release binaries for
+   macOS and Linux with install instructions; docs for the config, spec extensions and CI setup;
+   a license (the user's call).
+
+v1.x: Go, Java, Kotlin, C#, PHP and Ruby; code-mode MCP; Terraform and CLI targets; WebSockets;
+`stainless.yml` import; deriving a spec from an existing SDK.
+
 ## Feature parity
 
 What the leading generators ship, and where oryva stands. "Leaders" means at least two of
