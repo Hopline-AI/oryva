@@ -19,7 +19,7 @@ TOLERANCE = 5 * 60
 
 
 class Webhooks:
-    """Verify and parse webhooks that {{ c.title }} sends to your endpoint."""
+    """Verify and parse webhooks that {{ c.title | doc }} sends to your endpoint."""
 
     def __init__(self, client: BaseClient) -> None:
         self._client = client

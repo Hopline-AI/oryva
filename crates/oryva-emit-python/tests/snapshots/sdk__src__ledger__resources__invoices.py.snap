@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 from datetime import date
 from typing import TYPE_CHECKING, List, Literal, Union
-from urllib.parse import quote
+from urllib.parse import quote as _quote
 
 from typing_extensions import Unpack
 
@@ -95,7 +95,7 @@ class Invoices:
         Raises:
             NotFoundError: No object with that ID.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}"
+        path = f"/invoices/{_quote(invoice_id, safe='')}"
         return self._client._request("GET", path, cast_to=Invoice, options=options)
 
     def finalize(
@@ -108,7 +108,7 @@ class Invoices:
 
         Emails the customer immediately; this can't be undone.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}/finalize"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/finalize"
         return self._client._request("POST", path, cast_to=Invoice, options=options)
 
     def void(
@@ -124,7 +124,7 @@ class Invoices:
         Raises:
             ConflictError: The invoice isn't open.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}/void"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/void"
         return self._client._request("POST", path, cast_to=Invoice, options=options)
 
     def download_pdf(
@@ -134,7 +134,7 @@ class Invoices:
         **options: Unpack[RequestOptions],
     ) -> bytes:
         """Download the invoice as a PDF."""
-        path = f"/invoices/{quote(invoice_id, safe='')}/pdf"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/pdf"
         return self._client._request(
             "GET", path, cast_to=bytes, accept="application/pdf", options=options
         )
@@ -150,7 +150,7 @@ class Invoices:
 
         Save the response to `dest` instead of returning the bytes. The file is written in chunks, so large downloads stay out of memory.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}/pdf"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/pdf"
         self._client._download(
             "GET", path, dest=dest, accept="application/pdf", options=options
         )
@@ -232,7 +232,7 @@ class InvoicesWithRawResponse:
         Raises:
             NotFoundError: No object with that ID.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}"
+        path = f"/invoices/{_quote(invoice_id, safe='')}"
         return self._client._request(
             "GET", path, cast_to=Invoice, options=options, raw=True
         )
@@ -247,7 +247,7 @@ class InvoicesWithRawResponse:
 
         Emails the customer immediately; this can't be undone.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}/finalize"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/finalize"
         return self._client._request(
             "POST", path, cast_to=Invoice, options=options, raw=True
         )
@@ -265,7 +265,7 @@ class InvoicesWithRawResponse:
         Raises:
             ConflictError: The invoice isn't open.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}/void"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/void"
         return self._client._request(
             "POST", path, cast_to=Invoice, options=options, raw=True
         )
@@ -277,7 +277,7 @@ class InvoicesWithRawResponse:
         **options: Unpack[RequestOptions],
     ) -> APIResponse[bytes]:
         """Download the invoice as a PDF."""
-        path = f"/invoices/{quote(invoice_id, safe='')}/pdf"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/pdf"
         return self._client._request(
             "GET",
             path,
@@ -362,7 +362,7 @@ class AsyncInvoices:
         Raises:
             NotFoundError: No object with that ID.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}"
+        path = f"/invoices/{_quote(invoice_id, safe='')}"
         return await self._client._request(
             "GET", path, cast_to=Invoice, options=options
         )
@@ -377,7 +377,7 @@ class AsyncInvoices:
 
         Emails the customer immediately; this can't be undone.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}/finalize"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/finalize"
         return await self._client._request(
             "POST", path, cast_to=Invoice, options=options
         )
@@ -395,7 +395,7 @@ class AsyncInvoices:
         Raises:
             ConflictError: The invoice isn't open.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}/void"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/void"
         return await self._client._request(
             "POST", path, cast_to=Invoice, options=options
         )
@@ -407,7 +407,7 @@ class AsyncInvoices:
         **options: Unpack[RequestOptions],
     ) -> bytes:
         """Download the invoice as a PDF."""
-        path = f"/invoices/{quote(invoice_id, safe='')}/pdf"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/pdf"
         return await self._client._request(
             "GET", path, cast_to=bytes, accept="application/pdf", options=options
         )
@@ -423,7 +423,7 @@ class AsyncInvoices:
 
         Save the response to `dest` instead of returning the bytes. The file is written in chunks, so large downloads stay out of memory.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}/pdf"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/pdf"
         await self._client._download(
             "GET", path, dest=dest, accept="application/pdf", options=options
         )
@@ -505,7 +505,7 @@ class AsyncInvoicesWithRawResponse:
         Raises:
             NotFoundError: No object with that ID.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}"
+        path = f"/invoices/{_quote(invoice_id, safe='')}"
         return await self._client._request(
             "GET", path, cast_to=Invoice, options=options, raw=True
         )
@@ -520,7 +520,7 @@ class AsyncInvoicesWithRawResponse:
 
         Emails the customer immediately; this can't be undone.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}/finalize"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/finalize"
         return await self._client._request(
             "POST", path, cast_to=Invoice, options=options, raw=True
         )
@@ -538,7 +538,7 @@ class AsyncInvoicesWithRawResponse:
         Raises:
             ConflictError: The invoice isn't open.
         """
-        path = f"/invoices/{quote(invoice_id, safe='')}/void"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/void"
         return await self._client._request(
             "POST", path, cast_to=Invoice, options=options, raw=True
         )
@@ -550,7 +550,7 @@ class AsyncInvoicesWithRawResponse:
         **options: Unpack[RequestOptions],
     ) -> APIResponse[bytes]:
         """Download the invoice as a PDF."""
-        path = f"/invoices/{quote(invoice_id, safe='')}/pdf"
+        path = f"/invoices/{_quote(invoice_id, safe='')}/pdf"
         return await self._client._request(
             "GET",
             path,

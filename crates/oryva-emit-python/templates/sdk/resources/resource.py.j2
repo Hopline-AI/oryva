@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 
 
 class {{ r.class }}:
-    """{{ r.doc }}"""
+    """{{ r.doc | doc }}"""
 
     def __init__(self, client: {{ c.class }}) -> None:
         self._client = client
@@ -59,7 +59,7 @@ class {{ r.class }}WithRawResponse:
 {{ methods(r.sync_raw) }}
 
 class Async{{ r.class }}:
-    """{{ r.doc }}"""
+    """{{ r.doc | doc }}"""
 
     def __init__(self, client: {{ c.async_class }}) -> None:
         self._client = client

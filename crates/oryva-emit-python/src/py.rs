@@ -1,6 +1,6 @@
 //! Python-flavoured views of the IR shared by the SDK and MCP emitters.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use oryva_ir::{Api, BodyEncoding, Method, ParamLocation, ResponseBody, Shape, TypeRef};
 use serde_json::Value;
@@ -33,6 +33,231 @@ pub fn pascal(snake: &str) -> String {
                 .unwrap_or_default()
         })
         .collect()
+}
+
+/// Python's hard keywords (`keyword.kwlist`).
+const KEYWORDS: &[&str] = &[
+    "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue",
+    "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import",
+    "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while",
+    "with", "yield",
+];
+
+/// A valid Python identifier for a name from the spec: invalid characters become `_`, a leading
+/// number gets a `_` in front and a keyword gets a trailing `_` (`from` -> `from_`).
+pub fn ident(name: &str) -> String {
+    let mut out: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if out.is_empty() || out.starts_with(|c: char| c.is_ascii_digit()) {
+        out.insert(0, '_');
+    }
+    if KEYWORDS.contains(&out.as_str()) {
+        out.push('_');
+    }
+    out
+}
+
+/// Members of pydantic's `BaseModel`; a field with one of these names would override it.
+const MODEL_MEMBERS: &[&str] = &[
+    "construct",
+    "copy",
+    "dict",
+    "from_orm",
+    "json",
+    "parse_file",
+    "parse_obj",
+    "parse_raw",
+    "schema",
+    "schema_json",
+    "update_forward_refs",
+    "validate",
+    "model_computed_fields",
+    "model_config",
+    "model_construct",
+    "model_copy",
+    "model_dump",
+    "model_dump_json",
+    "model_extra",
+    "model_fields",
+    "model_fields_set",
+    "model_json_schema",
+    "model_parametrized_name",
+    "model_post_init",
+    "model_rebuild",
+    "model_validate",
+    "model_validate_json",
+    "model_validate_strings",
+];
+
+/// The attribute name of a model field. The wire name stays reachable through an alias.
+pub fn field_ident(ident: &str) -> String {
+    if MODEL_MEMBERS.contains(&ident) {
+        format!("{ident}_")
+    } else {
+        ident.to_string()
+    }
+}
+
+/// The class for a resource. A component schema of the same name wins the plain name.
+pub fn resource_class(api: &Api, name: &str) -> String {
+    let class = pascal(name);
+    if api.type_def(&class).is_some() {
+        format!("{class}Resource")
+    } else {
+        class
+    }
+}
+
+/// Names the generated modules import (or define), so a model must not take them.
+const RESERVED_TYPES: &[&str] = &[
+    "Annotated",
+    "Any",
+    "APIResponse",
+    "AsyncPage",
+    "AsyncStream",
+    "BaseModel",
+    "BinaryIO",
+    "Callable",
+    "ConfigDict",
+    "Cursor",
+    "Dict",
+    "Discriminator",
+    "Field",
+    "FileInput",
+    "List",
+    "Literal",
+    "Mapping",
+    "NotGiven",
+    "Offset",
+    "Optional",
+    "Page",
+    "RequestOptions",
+    "Stream",
+    "SyncPage",
+    "Tag",
+    "Union",
+    "Unpack",
+];
+
+fn rename_type(t: &mut TypeRef, to: &BTreeMap<String, String>) {
+    match t {
+        TypeRef::Named { name } => {
+            if let Some(new) = to.get(name) {
+                *name = new.clone();
+            }
+        }
+        TypeRef::Array { items: t }
+        | TypeRef::Map { values: t }
+        | TypeRef::Nullable { inner: t } => rename_type(t, to),
+        TypeRef::Union { variants } => variants.iter_mut().for_each(|v| rename_type(v, to)),
+        _ => {}
+    }
+}
+
+/// Give every model that shares a name with something the generated code imports a `Model`
+/// suffix, everywhere it is mentioned.
+fn rename_types(api: &mut Api) {
+    let client = pascal(&api.name);
+    let mut taken: BTreeSet<String> = api.types.iter().map(|t| t.name.clone()).collect();
+    let mut to = BTreeMap::new();
+    for t in &api.types {
+        if RESERVED_TYPES.contains(&t.name.as_str())
+            || t.name == client
+            || t.name == format!("Async{client}")
+        {
+            let mut new = format!("{}Model", t.name);
+            while !taken.insert(new.clone()) {
+                new.push('_');
+            }
+            to.insert(t.name.clone(), new);
+        }
+    }
+    if to.is_empty() {
+        return;
+    }
+    for t in &mut api.types {
+        if let Some(new) = to.get(&t.name) {
+            t.name = new.clone();
+        }
+        match &mut t.shape {
+            Shape::Object { fields } => fields.iter_mut().for_each(|f| rename_type(&mut f.ty, &to)),
+            Shape::Enum { .. } => {}
+            Shape::Union {
+                variants,
+                discriminator,
+            } => {
+                variants.iter_mut().for_each(|v| rename_type(v, &to));
+                for case in discriminator.iter_mut().flat_map(|d| &mut d.mapping) {
+                    if let Some(new) = to.get(&case.type_name) {
+                        case.type_name = new.clone();
+                    }
+                }
+            }
+            Shape::Alias { target } => rename_type(target, &to),
+        }
+    }
+    for m in api.resources.iter_mut().flat_map(|r| &mut r.methods) {
+        m.params
+            .iter_mut()
+            .for_each(|p| rename_type(&mut p.ty, &to));
+        if let Some(b) = &mut m.body {
+            rename_type(&mut b.ty, &to);
+        }
+        match &mut m.response {
+            ResponseBody::Json { ty } => rename_type(ty, &to),
+            ResponseBody::EventStream { event } => rename_type(event, &to),
+            _ => {}
+        }
+        for ty in m.errors.iter_mut().filter_map(|e| e.ty.as_mut()) {
+            rename_type(ty, &to);
+        }
+    }
+    for w in &mut api.webhooks {
+        rename_type(&mut w.payload, &to);
+    }
+}
+
+/// `ident` for every name the emitters write as an identifier, so no emitter has to remember to.
+/// Wire names are untouched; models and methods map them back with aliases and wire strings.
+pub fn sanitize(api: &Api) -> Api {
+    let mut api = api.clone();
+    rename_types(&mut api);
+    for r in &mut api.resources {
+        r.name = ident(&r.name);
+        for m in &mut r.methods {
+            m.name = ident(&m.name);
+            for p in &mut m.params {
+                p.ident = ident(&p.ident);
+            }
+        }
+    }
+    for t in &mut api.types {
+        if let Shape::Object { fields } = &mut t.shape {
+            // `+1` and `-1` both snake_case to `1`; the later one gets `_2`.
+            let mut taken = BTreeSet::new();
+            for f in fields {
+                let base = ident(&f.ident);
+                f.ident = base.clone();
+                let mut n = 1;
+                while !taken.insert(f.ident.clone()) {
+                    n += 1;
+                    f.ident = format!("{base}_{n}");
+                }
+            }
+        }
+    }
+    for w in &mut api.webhooks {
+        w.ident = ident(&w.ident);
+    }
+    api
 }
 
 pub fn py_str(s: &str) -> String {
@@ -171,7 +396,7 @@ pub enum Place {
 
 /// One keyword argument of a generated method.
 pub struct Arg<'a> {
-    pub ident: &'a str,
+    pub ident: String,
     /// Name on the wire (empty for a non-object `body`).
     pub wire: &'a str,
     pub place: Place,
@@ -192,7 +417,7 @@ pub fn method_args<'a>(api: &'a Api, m: &'a Method) -> Vec<Arg<'a>> {
     ] {
         for p in m.params.iter().filter(|p| p.location == loc) {
             args.push(Arg {
-                ident: &p.ident,
+                ident: p.ident.clone(),
                 wire: &p.name,
                 place: match loc {
                     ParamLocation::Path => Place::Path,
@@ -216,7 +441,7 @@ pub fn method_args<'a>(api: &'a Api, m: &'a Method) -> Vec<Arg<'a>> {
         };
         match fields {
             Some(fields) => args.extend(fields.iter().map(|f| Arg {
-                ident: &f.ident,
+                ident: f.ident.clone(),
                 wire: &f.name,
                 place: Place::Body,
                 ty: &f.ty,
@@ -226,9 +451,9 @@ pub fn method_args<'a>(api: &'a Api, m: &'a Method) -> Vec<Arg<'a>> {
             })),
             None => args.push(Arg {
                 ident: if body.encoding == BodyEncoding::Binary {
-                    "file"
+                    "file".into()
                 } else {
-                    "body"
+                    "body".into()
                 },
                 wire: "",
                 place: Place::Body,
@@ -237,6 +462,28 @@ pub fn method_args<'a>(api: &'a Api, m: &'a Method) -> Vec<Arg<'a>> {
                 description: None,
                 default: None,
             }),
+        }
+    }
+    // Parameters from different places (or a body field) may share a name; the first keeps it.
+    // `self` and the per-request options are parameters of every method too.
+    let mut taken: BTreeSet<String> = [
+        "self",
+        "options",
+        "timeout",
+        "max_retries",
+        "extra_headers",
+        "extra_query",
+        "extra_body",
+        "idempotency_key",
+    ]
+    .map(String::from)
+    .into();
+    for a in &mut args {
+        let base = a.ident.clone();
+        let mut n = 1;
+        while !taken.insert(a.ident.clone()) {
+            n += 1;
+            a.ident = format!("{base}_{n}");
         }
     }
     args.sort_by_key(|a| !a.required);
@@ -274,13 +521,26 @@ pub fn is_binary(m: &Method) -> bool {
     matches!(m.response, ResponseBody::Binary { .. })
 }
 
+/// Text safe to place between `"""` delimiters.
+pub fn escape_doc(text: &str) -> String {
+    let mut text = text.replace('\\', "\\\\").replace("\"\"\"", "\\\"\\\"\\\"");
+    // A quote against the opening or closing delimiter would merge with it.
+    if text.starts_with('"') {
+        text.insert(0, '\\');
+    }
+    if text.ends_with('"') {
+        text.insert(text.len() - 1, '\\');
+    }
+    text
+}
+
 /// Docstring literal for `indent` spaces of indentation.
 pub fn docstring(text: &str, indent: usize) -> String {
     let pad = " ".repeat(indent);
-    let text = text.replace('\\', "\\\\").replace("\"\"\"", "\\\"\\\"\\\"");
+    let text = escape_doc(text);
     let lines: Vec<&str> = text.lines().collect();
-    if lines.len() == 1 {
-        return format!("{pad}\"\"\"{}\"\"\"", lines[0]);
+    if lines.len() <= 1 {
+        return format!("{pad}\"\"\"{}\"\"\"", lines.first().unwrap_or(&""));
     }
     let mut out = format!("{pad}\"\"\"{}\n", lines[0]);
     for l in &lines[1..] {

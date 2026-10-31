@@ -102,7 +102,7 @@ def _resolve_auth(
 
 
 class {{ c.class }}(SyncAPIClient):
-    """Client for the {{ c.title }}.
+    """Client for the {{ c.title | doc }}.
 
     Credentials, the environment and the base URL come from the arguments, or from the
     environment when you leave them out:
@@ -173,7 +173,7 @@ class {{ c.class }}(SyncAPIClient):
 
 
 class {{ c.async_class }}(AsyncAPIClient):
-    """The async client for the {{ c.title }}. It takes the same arguments as `{{ c.class }}`;
+    """The async client for the {{ c.title | doc }}. It takes the same arguments as `{{ c.class }}`;
     every method is a coroutine, and paginated and streaming results are consumed with
     `async for`."""
 

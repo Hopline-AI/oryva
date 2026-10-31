@@ -216,7 +216,7 @@ pub fn common(api: &Api, opts: &Options) -> Common {
         .resources
         .iter()
         .map(|r| {
-            let c = pascal(&r.name);
+            let c = crate::py::resource_class(api, &r.name);
             ResourceRef {
                 module: r.name.clone(),
                 async_class: format!("Async{c}"),
@@ -371,20 +371,44 @@ pub fn types_ctx(api: &Api) -> TypesCtx {
         };
         match &t.shape {
             Shape::Object { fields } => {
+                // pydantic warns about fields called `model_*` unless told they are fine.
+                if fields.iter().any(|f| f.ident.starts_with("model_")) {
+                    item.config.push_str(", protected_namespaces=()");
+                }
                 if fields.iter().any(|f| has_file(&f.ty)) {
                     item.config.push_str(", arbitrary_types_allowed=True");
                 }
                 for f in fields {
                     let ann = annotation(&f.ty, f.required, &mut uses, Target::Sdk);
-                    let alias = (f.ident != f.name).then(|| py_str(&f.name));
-                    if alias.is_some() && !pydantic.contains(&"Field") {
+                    let ident = crate::py::field_ident(&f.ident);
+                    let alias = (ident != f.name).then(|| py_str(&f.name));
+                    // An object default must be built into its model; a bare dict is not one.
+                    let model_default = match (&f.default, base_type(&f.ty)) {
+                        (Some(serde_json::Value::Object(_)), TypeRef::Named { name }) => matches!(
+                            api.type_def(name).map(|t| &t.shape),
+                            Some(Shape::Object { .. })
+                        )
+                        .then_some(name),
+                        _ => None,
+                    };
+                    let default = match (model_default, &f.default) {
+                        (Some(name), Some(v)) => Some(format!(
+                            "default_factory=lambda: {name}.model_validate({})",
+                            py_value(v)
+                        )),
+                        (_, d) => d.as_ref().map(py_value),
+                    };
+                    if (alias.is_some() || model_default.is_some()) && !pydantic.contains(&"Field")
+                    {
                         pydantic.push("Field");
                     }
-                    let default = f.default.as_ref().map(py_value);
                     let assign = match (alias, &default, f.required) {
                         (Some(a), Some(d), false) => Some(format!("Field({d}, alias={a})")),
                         (Some(a), None, false) => Some(format!("Field(None, alias={a})")),
                         (Some(a), _, true) => Some(format!("Field(alias={a})")),
+                        (None, Some(d), false) if model_default.is_some() => {
+                            Some(format!("Field({d})"))
+                        }
                         (None, Some(d), false) => Some(d.clone()),
                         (None, None, false) => Some("None".into()),
                         (None, _, true) => None,
@@ -396,7 +420,7 @@ pub fn types_ctx(api: &Api) -> TypesCtx {
                         ann
                     };
                     item.fields.push(FieldItem {
-                        ident: f.ident.clone(),
+                        ident,
                         annotation: ann,
                         assign,
                         doc: f.description.as_deref().map(|d| d.trim().to_string()),
@@ -606,7 +630,7 @@ pub fn resource_ctx(api: &Api, r: &oryva_ir::Resource) -> ResourceCtx {
         .collect();
     let mut imports = import_lines(&uses);
     if needs_quote {
-        imports.push("from urllib.parse import quote".into());
+        imports.push("from urllib.parse import quote as _quote".into());
     }
     let variants = |is_async: bool, raw: bool| -> Vec<MethodItem> {
         plans
@@ -621,7 +645,7 @@ pub fn resource_ctx(api: &Api, r: &oryva_ir::Resource) -> ResourceCtx {
             .collect()
     };
     ResourceCtx {
-        class: pascal(&r.name),
+        class: crate::py::resource_class(api, &r.name),
         doc: r
             .description
             .clone()
@@ -641,6 +665,14 @@ pub fn humanize(snake: &str) -> String {
     c.next()
         .map(|f| f.to_uppercase().chain(c).collect())
         .unwrap_or_default()
+}
+
+/// The type without its `Nullable` wrapper.
+fn base_type(ty: &TypeRef) -> &TypeRef {
+    match ty {
+        TypeRef::Nullable { inner } => base_type(inner),
+        t => t,
+    }
 }
 
 fn is_file(ty: &TypeRef) -> bool {
@@ -757,7 +789,7 @@ fn plan(api: &Api, resource: &str, m: &Method, uses: &mut Uses, needs_quote: &mu
         };
         path = path.replace(
             &format!("{{{}}}", a.wire),
-            &format!("{{quote({value}, safe='')}}"),
+            &format!("{{_quote({value}, safe='')}}"),
         );
         *needs_quote = true;
     }
@@ -802,7 +834,12 @@ fn plan(api: &Api, resource: &str, m: &Method, uses: &mut Uses, needs_quote: &mu
                     kwargs.push(format!("data={}", dict(&data)));
                 }
             }
-            BodyEncoding::Binary => kwargs.push("content=file".into()),
+            BodyEncoding::Binary => {
+                kwargs.push("content=file".into());
+                if let Some(ct) = &b.content_type {
+                    kwargs.push(format!("content_type={}", py_str(ct)));
+                }
+            }
         }
     }
 

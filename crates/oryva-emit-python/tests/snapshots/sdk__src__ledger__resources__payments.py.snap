@@ -5,7 +5,7 @@ expression: content
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from urllib.parse import quote
+from urllib.parse import quote as _quote
 
 from typing_extensions import Unpack
 
@@ -56,7 +56,7 @@ class Payments:
         **options: Unpack[RequestOptions],
     ) -> Payment:
         """Fetch one payment."""
-        path = f"/payments/{quote(payment_id, safe='')}"
+        path = f"/payments/{_quote(payment_id, safe='')}"
         return self._client._request("GET", path, cast_to=Payment, options=options)
 
 
@@ -98,7 +98,7 @@ class PaymentsWithRawResponse:
         **options: Unpack[RequestOptions],
     ) -> APIResponse[Payment]:
         """Fetch one payment."""
-        path = f"/payments/{quote(payment_id, safe='')}"
+        path = f"/payments/{_quote(payment_id, safe='')}"
         return self._client._request(
             "GET", path, cast_to=Payment, options=options, raw=True
         )
@@ -141,7 +141,7 @@ class AsyncPayments:
         **options: Unpack[RequestOptions],
     ) -> Payment:
         """Fetch one payment."""
-        path = f"/payments/{quote(payment_id, safe='')}"
+        path = f"/payments/{_quote(payment_id, safe='')}"
         return await self._client._request(
             "GET", path, cast_to=Payment, options=options
         )
@@ -185,7 +185,7 @@ class AsyncPaymentsWithRawResponse:
         **options: Unpack[RequestOptions],
     ) -> APIResponse[Payment]:
         """Fetch one payment."""
-        path = f"/payments/{quote(payment_id, safe='')}"
+        path = f"/payments/{_quote(payment_id, safe='')}"
         return await self._client._request(
             "GET", path, cast_to=Payment, options=options, raw=True
         )

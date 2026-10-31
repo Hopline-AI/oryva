@@ -131,3 +131,46 @@ fn default_options_follow_api_name() {
     api.version = "1.4".into();
     assert_eq!(Options::for_api(&api).version, "1.4");
 }
+
+fn edge_cases() -> Api {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/specs/edge-cases.yaml");
+    oryva_spec::parse_file(&path).unwrap()
+}
+
+/// Keywords, odd characters, name collisions and nasty descriptions from real specs. `ruff` and
+/// `compileall` reject any of them emitted bare.
+#[test]
+fn edge_cases_compile() {
+    let api = edge_cases();
+    let opts = Options::for_api(&api);
+    let dir = tempfile::tempdir().unwrap();
+    emit_sdk(&api, &opts, &dir.path().join("sdk")).unwrap();
+    emit_mcp(&api, &opts, &dir.path().join("mcp")).unwrap();
+    check_python(dir.path());
+
+    let read = |p: &str| std::fs::read_to_string(dir.path().join("sdk/src/edge").join(p)).unwrap();
+    let types = read("types.py");
+    // A keyword is escaped in code and kept on the wire through an alias.
+    assert!(types.contains("async_: Optional[bool] = Field(None, alias=\"async\")"));
+    assert!(types.contains("from_: Optional[str] = Field(None, alias=\"from\")"));
+    // Fields that would override a pydantic member, or collide after snake_casing, are renamed.
+    assert!(types.contains("schema_: Optional[Dict[str, Any]] = Field(None, alias=\"schema\")"));
+    assert!(types.contains("_1: Optional[int] = Field(None, alias=\"+1\")"));
+    assert!(types.contains("_1_2: Optional[int] = Field(None, alias=\"-1\")"));
+    // Models named like the generated code's own imports get a suffix.
+    assert!(types.contains("class PageModel(BaseModel)"));
+    // An object default is built into its model.
+    assert!(types.contains("default_factory=lambda: Settings.model_validate({\"verbose\": True})"));
+
+    let items = read("resources/items.py");
+    // Colliding and reserved parameter names are numbered, and the wire names stay.
+    assert!(items.contains("timeout_2: int | NotGiven"));
+    assert!(items.contains("\"timeout\": timeout_2"));
+    assert!(items.contains("import_: str,"));
+    // The body's content type is sent as declared.
+    assert!(items.contains("content_type=\"image/jpeg\""));
+    // A path parameter called `quote` cannot shadow the URL-quoting helper.
+    assert!(items.contains("_quote(quote, safe="));
+    // A resource whose name is also a model gets a `Resource` suffix.
+    assert!(read("resources/workflows.py").contains("class WorkflowsResource:"));
+}

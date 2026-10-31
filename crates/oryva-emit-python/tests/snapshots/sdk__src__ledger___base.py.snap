@@ -136,6 +136,7 @@ class BaseClient:
         data: Optional[Mapping[str, Any]] = None,
         files: Optional[Mapping[str, Any]] = None,
         content: Any = None,
+        content_type: str = "application/octet-stream",
     ) -> _Request:
         unknown = set(options) - set(RequestOptions.__annotations__)
         if unknown:
@@ -177,7 +178,7 @@ class BaseClient:
             else:
                 form = {**(form or {}), **encode_form(extra_body)}
         if raw is not None and not _has_header(request_headers, "Content-Type"):
-            request_headers["Content-Type"] = "application/octet-stream"
+            request_headers["Content-Type"] = content_type
         return _Request(
             method=method,
             path=path,

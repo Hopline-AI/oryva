@@ -116,6 +116,7 @@ fn env() -> Result<Environment<'static>, Error> {
     env.set_trim_blocks(true);
     env.set_lstrip_blocks(true);
     env.set_keep_trailing_newline(true);
+    env.add_filter("doc", |s: String| py::escape_doc(&s));
     env.add_filter("q", |s: String| py::py_str(&s));
     for (name, src) in TEMPLATES {
         env.add_template(name, src)?;
@@ -126,6 +127,7 @@ fn env() -> Result<Environment<'static>, Error> {
 /// Writes the Python SDK project into `out` and formats it with `ruff format`.
 /// Returns every file written.
 pub fn emit_sdk(api: &Api, opts: &Options, out: &Path) -> Result<Vec<PathBuf>, Error> {
+    let api = &py::sanitize(api);
     let env = env()?;
     let render = |name: &str, ctx: minijinja::Value| -> Result<String, Error> {
         Ok(env.get_template(name)?.render(ctx)?)
@@ -209,6 +211,7 @@ pub fn emit_sdk(api: &Api, opts: &Options, out: &Path) -> Result<Vec<PathBuf>, E
 /// Writes the Python MCP server project into `out` and formats it with `ruff format`.
 /// Returns every file written. The server imports the SDK emitted by [`emit_sdk`].
 pub fn emit_mcp(api: &Api, opts: &Options, out: &Path) -> Result<Vec<PathBuf>, Error> {
+    let api = &py::sanitize(api);
     let env = env()?;
     let c = mcp::ctx(api, opts);
     let render =

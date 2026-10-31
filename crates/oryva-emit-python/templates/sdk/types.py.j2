@@ -15,20 +15,20 @@ FileInput = Union[bytes, str, "os.PathLike[str]", BinaryIO]
 
 {{ ty.raw }}
 {% if ty.doc %}
-"""{{ ty.doc }}"""
+"""{{ ty.doc | doc }}"""
 {% endif %}
 {% elif ty.expr %}
 
 {{ ty.name }} = {{ ty.expr }}
 {% if ty.doc %}
-"""{{ ty.doc }}"""
+"""{{ ty.doc | doc }}"""
 {% endif %}
 {% else %}
 
 
 class {{ ty.name }}(BaseModel):
 {% if ty.doc %}
-    """{{ ty.doc }}"""
+    """{{ ty.doc | doc }}"""
 
 {% endif %}
     model_config = ConfigDict({{ ty.config }})
@@ -39,7 +39,7 @@ class {{ ty.name }}(BaseModel):
     {{ f.ident }}: {{ f.annotation }}{% if f.assign %} = {{ f.assign }}{% endif %}
 
 {% if f.doc %}
-    """{{ f.doc }}"""
+    """{{ f.doc | doc }}"""
 {% endif %}
 {% endfor %}
 {% endif %}
