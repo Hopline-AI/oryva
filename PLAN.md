@@ -25,22 +25,22 @@ Stainless, Speakeasy and Fern.
 | Feature | Leaders | oryva | Wave |
 |---|---|---|---|
 | OpenAPI 3.0 / 3.1 input | yes | done | — |
-| Python SDK | yes | basic | 1 |
-| TypeScript SDK | yes | — | 1 |
+| Python SDK | yes | done (Python, TypeScript) | 1 |
+| TypeScript SDK | yes | done (Python, TypeScript) | 1 |
 | Go, Java, Kotlin, C#, PHP, Ruby | yes | — | 4 |
-| Typed models, typed errors | yes | done (Python) | 1 |
-| Retries with backoff, `Retry-After` | yes | done (Python) | 1 |
-| Pagination with auto-paging | yes | — | 1 |
-| Server-sent event streaming | yes | — | 1 |
-| Async client (Python) | yes | — | 1 |
-| Auth: API key, bearer, basic, OAuth2 client credentials | yes | key + bearer | 1 |
-| Environments (multiple servers) | yes | — | 1 |
-| Idempotency keys | Stainless | — | 1 |
-| Per-request options, raw responses | yes | — | 1 |
-| Forward-compatible enums and unions | Speakeasy | — | 1 |
-| Omitted vs null | Stainless | — | 1 |
-| Webhook verification and parsing | Stainless, Fern | — | 1 |
-| File upload and download | yes | upload (Python) | 1 |
+| Typed models, typed errors | yes | done (Python, TypeScript) | 1 |
+| Retries with backoff, `Retry-After` | yes | done (Python, TypeScript) | 1 |
+| Pagination with auto-paging | yes | done (Python, TypeScript) | 1 |
+| Server-sent event streaming | yes | done (Python, TypeScript) | 1 |
+| Async client (Python) | yes | done (Python, TypeScript) | 1 |
+| Auth: API key, bearer, basic, OAuth2 client credentials | yes | done (Python, TypeScript) | 1 |
+| Environments (multiple servers) | yes | done (Python, TypeScript) | 1 |
+| Idempotency keys | Stainless | done (Python, TypeScript) | 1 |
+| Per-request options, raw responses | yes | done (Python, TypeScript) | 1 |
+| Forward-compatible enums and unions | Speakeasy | done (Python, TypeScript) | 1 |
+| Omitted vs null | Stainless | done (Python, TypeScript) | 1 |
+| Webhook verification and parsing | Stainless, Fern | done (Python, TypeScript) | 1 |
+| File upload and download | yes | done (Python, TypeScript) | 1 |
 | MCP server | Stainless, Speakeasy | done (Python) | 2 |
 | Generated tests against a mock server | Speakeasy, APIMatic | — | 2 |
 | SDK READMEs with an example per method | yes | basic | 2 |
@@ -66,18 +66,29 @@ Stainless, Speakeasy and Fern.
   against a stub API, type-checks them with mypy and lints the server.
 - `oryva` CLI: `generate` and `eval`.
 
-## Wave 1 — the SDK features every leader has (in progress)
+## Wave 1 — the SDK features every leader has (done)
 
 - [x] IR v2: environments, auth schemes, idempotency header, pagination, event streams, binary
   bodies, defaults, integer enums, discriminators, webhooks
 - [x] `fixtures/specs/ledger.yaml`, a neutral fixture that exercises all of it
-- [ ] `oryva-spec` produces IR v2 from `ledger.yaml`
-- [ ] Python SDK implements the behaviour contract in `CLAUDE.md`, sync and async
-- [ ] TypeScript SDK implements the behaviour contract
-- [ ] Smoke tests for both languages run against a `ledger` stub; the live eval moves to `ledger`
+- [x] `oryva-spec` produces IR v2 from `ledger.yaml`
+- [x] Python SDK implements the behaviour contract in `CLAUDE.md`, sync and async
+- [x] TypeScript SDK implements the behaviour contract
+- [x] Smoke tests for both languages run against a `ledger` stub; the live eval moves to `ledger`
 
 Done when: both SDKs pass end-to-end checks for every row of the behaviour contract against the
 stub, type-check (`mypy`, `tsc`), and the generated MCP server still lints clean.
+
+Result: from `ledger.yaml` through the CLI, Python passes 140 checks and mypy, TypeScript passes 59
+tests and `tsc`, the MCP server lints with 0 errors on 18 tools, and Claude passes 4/4 live tasks
+on it (paging, a checked refund, an event stream) at about 13k tokens per task.
+
+## Next — prove it on real specs
+
+- [ ] Run `oryva generate` plus `mypy` and `tsc` on 5–10 large public specs (Stripe, GitHub,
+  OpenAI, Twilio and others); fix what breaks in the parser and emitters
+- [ ] IR: a literal type for `const`, so discriminators don't depend on single-value enums; keep a
+  binary body's content type
 
 ## Wave 2 — tests, docs and the agent surface
 
@@ -100,7 +111,8 @@ stub, type-check (`mypy`, `tsc`), and the generated MCP server still lints clean
 ## Wave 4 — more languages
 
 Go, then Java and Kotlin, then C#, PHP and Ruby, each against the same behaviour contract and
-the same conformance checks.
+the same conformance checks. Starts after wave 3: two languages kept in sync sell better than five
+that aren't.
 
 ## Wave 5 — configuration and reach
 

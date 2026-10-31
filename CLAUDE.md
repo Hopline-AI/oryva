@@ -21,6 +21,7 @@ finish something.
 - Pipeline: spec → `oryva_ir::Api` → emitters. Emitters never read the spec.
 - Spec parsing walks a `serde_json::Value` (YAML via `serde-saphyr`), so OpenAPI 3.0 and 3.1
   share one code path. Local `$ref`s only.
+- A `const` is a single-value enum in the IR; emitters render it as an exact literal.
 - Targets: Python (`httpx` + `pydantic` v2, sync and async clients) and TypeScript (native
   `fetch`, zero runtime dependencies), plus a Python MCP server (official `mcp` package) that
   wraps the Python SDK. More languages follow the same behaviour contract below.
@@ -74,7 +75,8 @@ All optional. Names are the contract between the parser and the emitters.
 Each language uses its own idioms, but every SDK does all of this:
 
 - **Auth:** constructor arguments for each scheme the API offers, falling back to the env vars
-  above. OAuth2 client credentials: fetch a token, cache it, refresh 60 s before expiry.
+  above. OAuth2 client credentials: fetch a token, cache it, refresh 60 s before expiry; the token URL
+  can be overridden (`<NAME>_OAUTH_TOKEN_URL`).
 - **Environments:** pick a named server (`environment="sandbox"`) or pass a base URL; the env var
   overrides the default.
 - **Retries:** 408, 409, 429, 5xx and connection errors, exponential backoff with jitter, honour
@@ -169,6 +171,7 @@ agent) reruns `scripts/verify.sh` on it and does a mutation check: inject one sm
 code the new tests cover, confirm a test fails, restore. A branch whose tests don't catch the
 bug doesn't merge. Restore from a copy of the file made before the mutation, never with
 `git checkout`, which also throws away uncommitted work. Judge "caught" by the test command's
-own exit code, and make sure the mutated code still compiles.
+own exit code, and make sure the mutated code still compiles. Templates are embedded with
+`include_str!`, so `touch` a restored template or cargo keeps the mutated build.
 
 When an agent gets something wrong twice, add a line to this file.

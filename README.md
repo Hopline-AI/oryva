@@ -1,13 +1,29 @@
 # oryva
 
-An SDK generator built for agents. Give it an OpenAPI spec and it writes a Python SDK plus an
-MCP server that wraps it, then measures how well agents can use the result.
+An SDK generator built for agents. Give it an OpenAPI spec and it writes Python and TypeScript
+SDKs plus an MCP server, then measures how well agents can use the result.
 
-Early stage: Python is the only target so far.
+Early stage: two languages so far, tested on a fictional fixture API and not yet on large
+real-world specs. See `PLAN.md` for what's next.
+
+## What you get
+
+From one spec, `oryva generate` writes:
+
+- **A Python SDK** (`httpx` + `pydantic`): sync and async clients, typed models and errors.
+- **A TypeScript SDK**: zero runtime dependencies, runs on Node 18+, browsers and edge runtimes.
+- **An MCP server** that wraps the Python SDK, with every tool marked read-only, destructive or
+  idempotent, and agent hints from the spec in its descriptions.
+
+Both SDKs follow one behaviour contract: API key, bearer, basic and OAuth2 client-credentials auth;
+named environments; retries that honour `Retry-After`; automatic idempotency keys; cursor, offset
+and page pagination with auto-paging; server-sent event streams; file uploads and downloads;
+per-request options; raw responses; omitted vs `null`; enums and unions that tolerate values the
+SDK doesn't know yet; webhook signature verification; and redacted debug logging.
 
 ## Why
 
-- **No drift.** The SDK and the MCP server come from one model of the API, so tool names,
+- **No drift.** The SDKs and the MCP server come from one model of the API, so tool names,
   descriptions and limits can't fall out of step with the API the way hand-written MCP servers do.
 - **Measured, not claimed.** `oryva eval` lints any MCP server for agent-facing problems (missing
   descriptions, destructive tools not marked destructive, retired tools still exposed, context
@@ -24,20 +40,21 @@ cargo install --path crates/oryva
 ## Use
 
 ```sh
-oryva generate spec.yaml --out out/myapi   # writes out/myapi/sdk and out/myapi/mcp
+oryva generate spec.yaml --out out/myapi   # out/myapi/python, out/myapi/mcp, out/myapi/typescript
 oryva eval tasks.yaml --lint-only          # lint an MCP server's tools; no API key needed
 oryva eval tasks.yaml --json report.json   # also run the tasks; needs ANTHROPIC_API_KEY
 ```
 
-A task file names the MCP server to start and the tasks to run; see
-`examples/sarvam/sarvam-mcp.eval.yaml`. Specs can carry agent-facing notes in an `x-oryva-agent`
-extension on each operation (`read_only`, `destructive`, `idempotent`, `hint`, `examples`).
+A task file names the MCP server to start and the tasks to run; see `fixtures/evals/ledger.yaml`.
+Specs can carry optional `x-oryva-*` extensions for pagination, idempotency, webhook signing,
+environment names and agent hints; `CLAUDE.md` lists them.
 
 ## Development
 
 - `scripts/verify.sh` is the definition of done: format, lints and tests.
-- `scripts/smoke-python.sh` runs the whole path: spec to SDK and MCP server, installs both, calls
-  them against a stub API, type-checks them and lints the server.
-- `CLAUDE.md` holds the decisions and conventions; `PLAN.md` holds the phases and their status.
+- `scripts/smoke-python.sh` and `scripts/smoke-typescript.sh` run the whole path: spec to SDKs,
+  then every behaviour against `scripts/stub_ledger.py`, type checks, and a lint of the MCP server.
+- `scripts/live-eval.sh` runs Claude against the generated MCP server (costs a few cents).
+- `CLAUDE.md` holds the decisions and conventions; `PLAN.md` holds the roadmap and its status.
 
 No license has been chosen yet.
