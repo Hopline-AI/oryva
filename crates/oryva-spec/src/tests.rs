@@ -952,3 +952,24 @@ fn blank_summary_and_description_are_absent() {
     let m = &api.resources[0].methods[0];
     assert_eq!((&m.summary, &m.description), (&None, &None));
 }
+
+#[test]
+fn a_default_that_contradicts_the_type_is_dropped() {
+    let api = ok(
+        "3.0.3",
+        "components:
+  schemas:
+    A:
+      type: object
+      properties:
+        region: {type: string, enum: [a, b], default: [a, b]}
+        size: {type: integer, default: 3}
+",
+    );
+    let Shape::Object { fields } = &api.type_def("A").unwrap().shape else {
+        panic!()
+    };
+    let default = |n: &str| fields.iter().find(|f| f.name == n).unwrap().default.clone();
+    assert_eq!(default("region"), None);
+    assert_eq!(default("size"), Some(serde_json::json!(3)));
+}

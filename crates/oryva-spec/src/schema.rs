@@ -69,8 +69,25 @@ fn accepts_null(s: &Value) -> bool {
             .is_some_and(|a| a.iter().any(Value::is_null))
 }
 
+/// The schema's default, unless it contradicts the schema's own `type`. Real specs have a string
+/// enum defaulting to the list of all its values; emitting that would not type-check.
 pub(crate) fn default_of(s: &Value) -> Option<Value> {
-    s.get("default").filter(|v| !v.is_null()).cloned()
+    let d = s.get("default").filter(|v| !v.is_null())?;
+    let fits = |t: &str| match t {
+        "string" => d.is_string(),
+        "integer" => d.is_i64() || d.is_u64(),
+        "number" => d.is_number(),
+        "boolean" => d.is_boolean(),
+        "array" => d.is_array(),
+        "object" => d.is_object(),
+        _ => true,
+    };
+    let ok = match s.get("type") {
+        Some(Value::String(t)) => fits(t),
+        Some(Value::Array(ts)) => ts.iter().filter_map(Value::as_str).any(fits),
+        _ => true,
+    };
+    ok.then(|| d.clone())
 }
 
 fn unesc(s: &str) -> String {
