@@ -155,8 +155,9 @@ fn edge_cases_compile() {
     assert!(types.contains("from_: Optional[str] = Field(None, alias=\"from\")"));
     // Fields that would override a pydantic member, or collide after snake_casing, are renamed.
     assert!(types.contains("schema_: Optional[Dict[str, Any]] = Field(None, alias=\"schema\")"));
-    assert!(types.contains("_1: Optional[int] = Field(None, alias=\"+1\")"));
-    assert!(types.contains("_1_2: Optional[int] = Field(None, alias=\"-1\")"));
+    assert!(types.contains("field_1: Optional[int] = Field(None, alias=\"+1\")"));
+    assert!(types.contains("field_: Optional[str] = Field(None, alias=\"\")"));
+    assert!(types.contains("field_1_2: Optional[int] = Field(None, alias=\"-1\")"));
     // Models named like the generated code's own imports get a suffix.
     assert!(types.contains("class PageModel(BaseModel)"));
     // An object default is built into its model.

@@ -575,6 +575,17 @@ expression: "parse(\"edge-cases.yaml\")"
             "default": null
           },
           {
+            "name": "",
+            "ident": "",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          },
+          {
             "name": "-1",
             "ident": "1",
             "ty": {

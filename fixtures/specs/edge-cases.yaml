@@ -162,6 +162,7 @@ components:
         copy: {type: string}
         model_dump: {type: string}
         "+1": {type: integer}
+        "": {type: string}
         "-1": {type: integer}
         1st: {type: string}
         with-dash: {type: string}

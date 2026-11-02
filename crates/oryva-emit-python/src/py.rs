@@ -99,7 +99,10 @@ const MODEL_MEMBERS: &[&str] = &[
 
 /// The attribute name of a model field. The wire name stays reachable through an alias.
 pub fn field_ident(ident: &str) -> String {
-    if MODEL_MEMBERS.contains(&ident) {
+    // pydantic rejects leading underscores in field names (`+1` snake-cases to `_1`).
+    if ident.starts_with('_') {
+        format!("field{ident}")
+    } else if MODEL_MEMBERS.contains(&ident) {
         format!("{ident}_")
     } else {
         ident.to_string()
