@@ -892,3 +892,27 @@ fn ref_into_a_parameters_schema_is_parsed_in_place() {
         TypeRef::Enum { .. }
     ));
 }
+
+#[test]
+fn response_may_ref_a_component_of_another_kind() {
+    let api = ok(
+        "3.0.2",
+        "paths:
+  /a:
+    get:
+      responses:
+        '200': {$ref: '#/components/requestBodies/Shared'}
+components:
+  requestBodies:
+    Shared:
+      description: ok
+      content:
+        application/json:
+          schema: {type: object, properties: {id: {type: string}}}
+",
+    );
+    assert!(matches!(
+        api.resources[0].methods[0].response,
+        ResponseBody::Json { .. }
+    ));
+}

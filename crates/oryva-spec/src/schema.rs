@@ -100,7 +100,9 @@ impl<'a> Ctx<'a> {
                 format!("external $ref {r:?} is not supported, only local `#/components/...` refs; bundle the spec into one file first with `npx @redocly/cli bundle spec.yaml -o bundled.yaml`"),
             );
         }
-        if !r.starts_with(&format!("#/components/{section}/")) {
+        // Real specs point a response at `#/components/requestBodies/...` and the like; the
+        // target is just a value. Only schemas need a component name, for the type they become.
+        if section == "schemas" && !r.starts_with("#/components/schemas/") {
             return invalid(
                 at,
                 format!("$ref {r:?} must point into #/components/{section}/"),
