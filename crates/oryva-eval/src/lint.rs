@@ -56,6 +56,15 @@ impl LintReport {
     }
 }
 
+/// Whether `phrase` appears in a sentence about the tool. A sentence that quotes code, as in "The
+/// `team` filter is deprecated", is about a parameter and the tool still works.
+fn says_retired(lower: &str, phrase: &str) -> bool {
+    lower.match_indices(phrase).any(|(i, _)| {
+        let start = lower[..i].rfind(['.', '!', '\n']).map_or(0, |s| s + 1);
+        !lower[start..i].contains('`')
+    })
+}
+
 const MIN_DESCRIPTION: usize = 40;
 const DESTRUCTIVE_WORDS: [&str; 6] = ["delete", "remove", "cancel", "refund", "revoke", "drop"];
 /// Phrases that say the tool itself is gone. A bare "deprecated" is not enough: a validator
@@ -172,7 +181,7 @@ pub fn lint_tools(tools: &[ToolDef]) -> LintReport {
         let lower = desc.to_lowercase();
         let retired = RETIRED_PHRASES
             .iter()
-            .find(|p| lower.contains(**p))
+            .find(|p| says_retired(&lower, p))
             .or_else(|| RETIRED_PREFIXES.iter().find(|p| lower.starts_with(**p)));
         if let Some(p) = retired {
             add(
@@ -288,6 +297,10 @@ mod tests {
                 "get_sandbox",
                 "Returns 404 if the named sandbox no longer exists.",
             ),
+            tool(
+                "list_projects",
+                "Lists projects. **The `team` filter is deprecated.** Use memberships.",
+            ),
             tool("old", "DEPRECATED: use new_thing instead of this tool."),
             tool("gone", "Fetches a report. No longer available since March."),
         ]);
@@ -299,6 +312,7 @@ mod tests {
         };
         assert!(!flagged("validate_request"));
         assert!(!flagged("get_sandbox"));
+        assert!(!flagged("list_projects"));
         assert!(flagged("text_analytics"));
         assert!(flagged("old"));
         assert!(flagged("gone"));
