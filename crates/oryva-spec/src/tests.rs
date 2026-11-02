@@ -939,3 +939,16 @@ fn ref_to_a_property_of_a_schema_is_parsed_in_place() {
     }
     assert!(api.type_def("AProperties").is_none());
 }
+
+#[test]
+fn blank_summary_and_description_are_absent() {
+    let api = ok(
+        "3.1.0",
+        "paths:
+  /a:
+    get: {summary: '', description: '  ', responses: {'200': {description: ok}}}
+",
+    );
+    let m = &api.resources[0].methods[0];
+    assert_eq!((&m.summary, &m.description), (&None, &None));
+}

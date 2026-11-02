@@ -36,7 +36,9 @@ pub(crate) fn pascal(s: &str) -> String {
 }
 
 pub(crate) fn string_at(v: &Value, key: &str) -> Option<String> {
-    v.get(key).and_then(Value::as_str).map(String::from)
+    // A blank summary or description says nothing; treating it as absent lets emitters fall back.
+    let s = v.get(key).and_then(Value::as_str)?;
+    (!s.trim().is_empty()).then(|| s.to_string())
 }
 
 fn is_null_schema(v: &Value) -> bool {
