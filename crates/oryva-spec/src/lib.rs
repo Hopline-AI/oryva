@@ -81,9 +81,7 @@ fn convert(doc: &Value) -> Result<Api, SpecError> {
     if !["3.0", "3.1", "3.2"].iter().any(|v| version.starts_with(v)) {
         return invalid(
             "#/openapi",
-            format!(
-                "expected OpenAPI 3.0, 3.1 or 3.2, found {version:?}"
-            ),
+            format!("expected OpenAPI 3.0, 3.1 or 3.2, found {version:?}"),
         );
     }
     let info = doc.get("info").unwrap_or(&Value::Null);

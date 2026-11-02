@@ -123,7 +123,9 @@ impl<'a> Ctx<'a> {
         if !r.starts_with('#') {
             return invalid(
                 at,
-                format!("external $ref {r:?} is not supported, only local `#/components/...` refs; bundle the spec into one file first with `npx @redocly/cli bundle spec.yaml -o bundled.yaml`"),
+                format!(
+                    "external $ref {r:?} is not supported, only local `#/components/...` refs; bundle the spec into one file first with `npx @redocly/cli bundle spec.yaml -o bundled.yaml`"
+                ),
             );
         }
         // Real specs point a response at `#/components/requestBodies/...` and the like; the

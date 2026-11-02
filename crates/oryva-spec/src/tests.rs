@@ -184,7 +184,10 @@ fn external_ref_is_an_error() {
         e.contains("#/paths/~1a/get/responses/200/content/application~1json/schema"),
         "{e}"
     );
-    assert!(e.contains("external") && e.contains("@redocly/cli bundle"), "{e}");
+    assert!(
+        e.contains("external") && e.contains("@redocly/cli bundle"),
+        "{e}"
+    );
 }
 
 #[test]
@@ -866,7 +869,12 @@ fn names_that_remove_things_are_destructive_on_any_write_method() {
     );
     let destructive = |m: &str| {
         let r = &api.resources[0];
-        r.methods.iter().find(|x| x.name == m).unwrap().agent.destructive
+        r.methods
+            .iter()
+            .find(|x| x.name == m)
+            .unwrap()
+            .agent
+            .destructive
     };
     assert!(destructive("bulk_delete"));
     assert!(!destructive("removed"), "a GET only reads");
@@ -935,7 +943,10 @@ fn ref_to_a_property_of_a_schema_is_parsed_in_place() {
 ",
     );
     for f in ["kind", "other"] {
-        assert!(matches!(field_ty(&api, "B", f), TypeRef::Enum { .. }), "{f}");
+        assert!(
+            matches!(field_ty(&api, "B", f), TypeRef::Enum { .. }),
+            "{f}"
+        );
     }
     assert!(api.type_def("AProperties").is_none());
 }

@@ -284,7 +284,10 @@ mod tests {
         let report = lint_tools(&[
             tool("validate_request", validator),
             tool("text_analytics", analytics),
-            tool("get_sandbox", "Returns 404 if the named sandbox no longer exists."),
+            tool(
+                "get_sandbox",
+                "Returns 404 if the named sandbox no longer exists.",
+            ),
             tool("old", "DEPRECATED: use new_thing instead of this tool."),
             tool("gone", "Fetches a report. No longer available since March."),
         ]);

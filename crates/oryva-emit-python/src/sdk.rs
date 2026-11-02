@@ -528,7 +528,9 @@ fn cut_cycles(ty: &TypeRef, emitted: &BTreeSet<String>) -> TypeRef {
     match ty {
         TypeRef::Named { name } if !emitted.contains(name) => TypeRef::Any,
         TypeRef::Array { items } => TypeRef::Array { items: cut(items) },
-        TypeRef::Map { values } => TypeRef::Map { values: cut(values) },
+        TypeRef::Map { values } => TypeRef::Map {
+            values: cut(values),
+        },
         TypeRef::Nullable { inner } => TypeRef::Nullable { inner: cut(inner) },
         TypeRef::Union { variants } => TypeRef::Union {
             variants: variants.iter().map(|v| cut_cycles(v, emitted)).collect(),
