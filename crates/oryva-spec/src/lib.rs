@@ -69,6 +69,14 @@ pub fn parse_str(src: &str) -> Result<Api, SpecError> {
 
 fn convert(doc: &Value) -> Result<Api, SpecError> {
     let version = doc.get("openapi").and_then(Value::as_str).unwrap_or("");
+    if let Some(v) = doc.get("swagger").and_then(Value::as_str) {
+        return invalid(
+            "#/swagger",
+            format!(
+                "Swagger {v} is not supported, only OpenAPI 3.0 and 3.1; convert it first with `npx swagger2openapi spec.yaml -o openapi.yaml`"
+            ),
+        );
+    }
     if !(version.starts_with("3.0") || version.starts_with("3.1")) {
         return invalid(
             "#/openapi",

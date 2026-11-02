@@ -176,7 +176,7 @@ fn external_ref_is_an_error() {
         e.contains("#/paths/~1a/get/responses/200/content/application~1json/schema"),
         "{e}"
     );
-    assert!(e.contains("external"), "{e}");
+    assert!(e.contains("external") && e.contains("@redocly/cli bundle"), "{e}");
 }
 
 #[test]
@@ -207,7 +207,9 @@ paths:
 #[test]
 fn rejects_swagger_2() {
     let e = parse_str("swagger: '2.0'\ninfo: {title: x, version: '1'}\n").unwrap_err();
-    assert!(e.to_string().starts_with("#/openapi"), "{e}");
+    let e = e.to_string();
+    assert!(e.starts_with("#/swagger"), "{e}");
+    assert!(e.contains("swagger2openapi"), "{e}");
 }
 
 fn only_method(api: &Api) -> &oryva_ir::Method {

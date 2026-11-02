@@ -97,7 +97,7 @@ impl<'a> Ctx<'a> {
         if !r.starts_with('#') {
             return invalid(
                 at,
-                format!("external $ref {r:?} is not supported; bundle the spec into one file"),
+                format!("external $ref {r:?} is not supported, only local `#/components/...` refs; bundle the spec into one file first with `npx @redocly/cli bundle spec.yaml -o bundled.yaml`"),
             );
         }
         if !r.starts_with(&format!("#/components/{section}/")) {
