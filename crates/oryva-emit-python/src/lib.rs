@@ -32,16 +32,24 @@ impl Options {
     }
 }
 
-/// Date versions such as `2026-10-01` aren't valid for PyPI; write them `2026.10.01`.
+/// PyPI needs PEP 440. A date version, with or without a suffix (`2026-10-01`,
+/// `2026-09-30.endive`), becomes `2026.10.01`; plain dotted numbers pass; anything else becomes
+/// `0.1.0`, as in the TypeScript SDK.
 fn pep440(version: &str) -> String {
-    let parts: Vec<&str> = version.split('-').collect();
-    let is_date = parts.len() == 3
-        && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit()))
-        && parts[0].len() == 4;
-    if is_date {
-        parts.join(".")
-    } else {
+    let numeric = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+    let date: Vec<&str> = version.get(..10).unwrap_or("").split('-').collect();
+    let suffix = version.get(10..).unwrap_or("");
+    if date.len() == 3
+        && date[0].len() == 4
+        && date.iter().all(|p| numeric(p))
+        && (suffix.is_empty() || suffix.starts_with(['.', '-', '_']))
+    {
+        return date.join(".");
+    }
+    if version.split('.').all(numeric) {
         version.to_string()
+    } else {
+        "0.1.0".into()
     }
 }
 

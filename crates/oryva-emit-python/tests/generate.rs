@@ -130,6 +130,16 @@ fn default_options_follow_api_name() {
     assert_eq!(opts.version, "2026.10.01");
     api.version = "1.4".into();
     assert_eq!(Options::for_api(&api).version, "1.4");
+    // Dated versions with a name, and anything else PyPI would reject.
+    for (given, want) in [
+        ("2026-09-30.endive", "2026.09.30"),
+        ("v2-beta", "0.1.0"),
+        ("1.4.2-beta", "0.1.0"),
+        ("", "0.1.0"),
+    ] {
+        api.version = given.into();
+        assert_eq!(Options::for_api(&api).version, want, "{given:?}");
+    }
 }
 
 fn edge_cases() -> Api {
