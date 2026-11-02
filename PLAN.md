@@ -33,19 +33,29 @@ A senior engineer could ship oryva as a product when all of this holds. Everythi
    removes stale files, never silently overwrites a hand-edited generated file, and never touches
    files it didn't generate. `oryva diff` reports breaking changes and the next semver version.
    A GitHub Action regenerates on spec change and opens a PR.
-5. **Agent layer.** `oryva eval` lint and live runs; `llms.txt` with each SDK.
+5. **Agent layer.** `oryva eval` lint and live runs; `llms.txt` with each SDK. The MCP server stays
+   usable at any API size: past a context budget it switches to a small fixed set of tools
+   (search, describe, call) instead of one tool per endpoint, and destructive calls need explicit
+   confirmation there. The lint flags tool lists too large for an agent's context.
+7. **Auth as real specs declare it**, including requirements that need several credentials sent
+   together (Plaid's `clientId` + `secret` + version header).
 6. **Project.** CI on this repo runs verify and the smoke tests on every PR; release binaries for
    macOS and Linux with install instructions; docs for the config, spec extensions and CI setup;
    a license (the user's call).
 
 Status, 2026-11-02:
 
-- 1 (inputs): 7 large specs pass; widening to 11+ with runtime imports and MCP lint is in progress.
+- 1 (inputs): done. 11 large public specs (Stripe, GitHub, OpenAI, Twilio, Asana, Spotify, Box,
+  Discord, Vercel, PagerDuty, Train Travel; OpenAPI 3.0 to 3.2) generate, type-check, import and
+  lint clean. Swagger 2.0 and external `$ref`s fail with the command that fixes them.
+- New finding: the MCP servers for the largest APIs are far too big for an agent (Stripe: 604
+  tools, about 780k tokens of tool definitions). Item 5 now covers this.
 - 2 (outputs): done.
 - 3 (publish-ready SDKs): not started.
 - 4 (maintenance): config, safe regeneration, `oryva diff` and the GitHub Action are done. The
   action's pull-request step is exercised only by users' runs; CI tests it with `create-pr: false`.
-- 5 (agent layer): `oryva eval` done; `llms.txt` not started.
+- 5 (agent layer): `oryva eval` done; `llms.txt` and the bounded MCP surface not started.
+- 7 (auth): single schemes done; combined requirements not started (Plaid is excluded until then).
 - 6 (project): CI and the release workflow are done; the first tagged release and the license
   are open.
 
