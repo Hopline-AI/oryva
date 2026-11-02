@@ -180,6 +180,20 @@ components:
       properties:
         verbose: {type: boolean, default: false}
     # Names the generated code also uses.
+    # A union that contains itself: pydantic cannot resolve it as an alias.
+    Details:
+      oneOf:
+        - type: object
+          additionalProperties: {$ref: "#/components/schemas/Details"}
+        - $ref: "#/components/schemas/Leaf"
+    Leaf:
+      type: object
+      properties:
+        code: {type: string}
+    Failure:
+      type: object
+      properties:
+        errors: {$ref: "#/components/schemas/Details"}
     Page:
       type: object
       properties:

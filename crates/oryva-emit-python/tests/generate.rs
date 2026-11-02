@@ -162,6 +162,9 @@ fn edge_cases_compile() {
     // An object default is built into its model.
     assert!(types.contains("default_factory=lambda: Settings.model_validate({\"verbose\": True})"));
 
+    // A union that contains itself cannot name itself: pydantic recurses forever on that.
+    assert!(types.contains("Details = Union[Dict[str, Any], Leaf]"));
+
     let items = read("resources/items.py");
     // Colliding and reserved parameter names are numbered, and the wire names stay.
     assert!(items.contains("timeout_2: int | NotGiven"));

@@ -429,6 +429,47 @@ expression: "parse(\"edge-cases.yaml\")"
       }
     },
     {
+      "name": "Details",
+      "description": null,
+      "shape": {
+        "kind": "union",
+        "variants": [
+          {
+            "kind": "map",
+            "values": {
+              "kind": "named",
+              "name": "Details"
+            }
+          },
+          {
+            "kind": "named",
+            "name": "Leaf"
+          }
+        ],
+        "discriminator": null
+      }
+    },
+    {
+      "name": "Failure",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "errors",
+            "ident": "errors",
+            "ty": {
+              "kind": "named",
+              "name": "Details"
+            },
+            "required": false,
+            "description": null,
+            "default": null
+          }
+        ]
+      }
+    },
+    {
       "name": "Flags",
       "description": "Ends with a quote: \"flags\"",
       "shape": {
@@ -691,6 +732,26 @@ expression: "parse(\"edge-cases.yaml\")"
             },
             "required": false,
             "description": "Same name as the query parameter.",
+            "default": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "Leaf",
+      "description": null,
+      "shape": {
+        "kind": "object",
+        "fields": [
+          {
+            "name": "code",
+            "ident": "code",
+            "ty": {
+              "kind": "string",
+              "format": null
+            },
+            "required": false,
+            "description": null,
             "default": null
           }
         ]

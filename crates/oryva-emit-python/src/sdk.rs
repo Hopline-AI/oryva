@@ -360,6 +360,7 @@ pub fn types_ctx(api: &Api) -> TypesCtx {
     uses.typing.extend(["BinaryIO", "Union"]);
     let mut pydantic = vec!["BaseModel", "ConfigDict"];
     let mut items = Vec::new();
+    let mut emitted = BTreeSet::new();
     for t in sorted_types(api) {
         let mut item = TypeItem {
             name: t.name.clone(),
@@ -459,18 +460,26 @@ pub fn types_ctx(api: &Api) -> TypesCtx {
                         }
                     }
                     _ => {
+                        let union = TypeRef::Union {
+                            variants: variants.clone(),
+                        };
                         item.expr = Some(render(
-                            &TypeRef::Union {
-                                variants: variants.clone(),
-                            },
+                            &cut_cycles(&union, &emitted),
                             &mut uses,
                             Target::Sdk,
                         ))
                     }
                 }
             }
-            Shape::Alias { target } => item.expr = Some(render(target, &mut uses, Target::Sdk)),
+            Shape::Alias { target } => {
+                item.expr = Some(render(
+                    &cut_cycles(target, &emitted),
+                    &mut uses,
+                    Target::Sdk,
+                ))
+            }
         }
+        emitted.insert(t.name.clone());
         items.push(item);
     }
     if api
@@ -508,6 +517,23 @@ pub fn types_ctx(api: &Api) -> TypesCtx {
         imports: import_lines(&uses),
         pydantic: pydantic.join(", "),
         types: items,
+    }
+}
+
+/// Types come out in dependency order, so a name that is not out yet closes a cycle. A recursive
+/// alias like `A = Union[Dict[str, A], B]` makes pydantic recurse forever, and mypy rejects the
+/// `TypeAliasType` spelling, so the back edge becomes `Any`.
+fn cut_cycles(ty: &TypeRef, emitted: &BTreeSet<String>) -> TypeRef {
+    let cut = |t: &TypeRef| Box::new(cut_cycles(t, emitted));
+    match ty {
+        TypeRef::Named { name } if !emitted.contains(name) => TypeRef::Any,
+        TypeRef::Array { items } => TypeRef::Array { items: cut(items) },
+        TypeRef::Map { values } => TypeRef::Map { values: cut(values) },
+        TypeRef::Nullable { inner } => TypeRef::Nullable { inner: cut(inner) },
+        TypeRef::Union { variants } => TypeRef::Union {
+            variants: variants.iter().map(|v| cut_cycles(v, emitted)).collect(),
+        },
+        other => other.clone(),
     }
 }
 
