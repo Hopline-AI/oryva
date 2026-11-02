@@ -102,6 +102,14 @@ fn nullable_in_3_0_and_3_1() {
     let v31 = ok("3.1.0", &schemas("{type: [string, 'null']}"));
     assert_eq!(field_ty(&v30, "A", "x"), nullable(string()));
     assert_eq!(field_ty(&v31, "A", "x"), nullable(string()));
+    let v32 = ok("3.2.0", &schemas("{type: [string, 'null']}"));
+    assert_eq!(field_ty(&v32, "A", "x"), nullable(string()));
+}
+
+#[test]
+fn unknown_openapi_version_is_an_error() {
+    let e = err("4.0.0", "paths: {}");
+    assert!(e.starts_with("#/openapi") && e.contains("4.0.0"), "{e}");
 }
 
 #[test]

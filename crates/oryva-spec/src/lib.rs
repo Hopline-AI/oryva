@@ -77,11 +77,12 @@ fn convert(doc: &Value) -> Result<Api, SpecError> {
             ),
         );
     }
-    if !(version.starts_with("3.0") || version.starts_with("3.1")) {
+    // 3.2 is 3.1 plus additions that no emitter reads, so it shares the 3.1 path.
+    if !["3.0", "3.1", "3.2"].iter().any(|v| version.starts_with(v)) {
         return invalid(
             "#/openapi",
             format!(
-                "expected OpenAPI 3.0 or 3.1, found {version:?}; convert Swagger 2.0 specs to 3.x first"
+                "expected OpenAPI 3.0, 3.1 or 3.2, found {version:?}"
             ),
         );
     }
