@@ -166,7 +166,9 @@ pub fn lint_tools(tools: &[ToolDef]) -> LintReport {
             );
         }
 
+        // A read-only tool cannot destroy anything: `get_refund` reads a refund.
         if ann.destructive_hint != Some(true)
+            && ann.read_only_hint != Some(true)
             && let Some(word) = words(&t.name)
                 .into_iter()
                 .find(|w| DESTRUCTIVE_WORDS.contains(&w.as_str()))
@@ -316,6 +318,28 @@ mod tests {
         assert!(flagged("text_analytics"));
         assert!(flagged("old"));
         assert!(flagged("gone"));
+    }
+
+    #[test]
+    fn destructive_names_only_matter_for_tools_that_write() {
+        let with = |name: &str, read_only: bool| -> ToolDef {
+            serde_json::from_value(serde_json::json!({
+                "name": name,
+                "description": "Does something with a refund, described at length.",
+                "inputSchema": {"type": "object"},
+                "annotations": {"readOnlyHint": read_only, "destructiveHint": false},
+            }))
+            .unwrap()
+        };
+        let report = lint_tools(&[with("get_refund", true), with("create_refund", false)]);
+        let flagged = |t: &str| {
+            report
+                .findings
+                .iter()
+                .any(|f| f.tool == t && f.rule == "destructive-unmarked")
+        };
+        assert!(!flagged("get_refund"));
+        assert!(flagged("create_refund"));
     }
 
     #[test]
