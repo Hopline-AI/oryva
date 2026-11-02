@@ -59,8 +59,9 @@ impl LintReport {
 const MIN_DESCRIPTION: usize = 40;
 const DESTRUCTIVE_WORDS: [&str; 6] = ["delete", "remove", "cancel", "refund", "revoke", "drop"];
 /// Phrases that say the tool itself is gone. A bare "deprecated" is not enough: a validator
-/// can legitimately mention "deprecated values".
-const RETIRED_PHRASES: [&str; 14] = [
+/// can legitimately mention "deprecated values", and "no longer exists" is usually about a record
+/// ("returns 404 if the sandbox no longer exists").
+const RETIRED_PHRASES: [&str; 13] = [
     "is deprecated",
     "is retired",
     "has been deprecated",
@@ -73,7 +74,6 @@ const RETIRED_PHRASES: [&str; 14] = [
     "no longer available",
     "no longer supported",
     "no longer works",
-    "no longer exists",
     "no longer maintained",
 ];
 /// A description that opens with one of these is a deprecation notice.
@@ -284,6 +284,7 @@ mod tests {
         let report = lint_tools(&[
             tool("validate_request", validator),
             tool("text_analytics", analytics),
+            tool("get_sandbox", "Returns 404 if the named sandbox no longer exists."),
             tool("old", "DEPRECATED: use new_thing instead of this tool."),
             tool("gone", "Fetches a report. No longer available since March."),
         ]);
@@ -294,6 +295,7 @@ mod tests {
                 .any(|f| f.tool == t && f.rule == "deprecated-exposed")
         };
         assert!(!flagged("validate_request"));
+        assert!(!flagged("get_sandbox"));
         assert!(flagged("text_analytics"));
         assert!(flagged("old"));
         assert!(flagged("gone"));
