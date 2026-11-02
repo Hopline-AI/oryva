@@ -53,7 +53,9 @@ for entry in "${specs[@]}"; do
   [ "$ts_errors" -eq 0 ] && ts=ok || { ts="${ts_errors}err"; failed=1; }
 
   # Runtime import: installed packages for Python, the built dist for TypeScript.
-  uv pip install -q --python "$venv/bin/python" --reinstall-package "$pkg" --reinstall-package "$pkg-mcp" "$out/python" "$out/mcp" >"$out/install.log" 2>&1
+  sdk_dist=$(sed -n 's/^name = "\(.*\)"/\1/p' "$out/python/pyproject.toml" | head -1)
+  mcp_dist=$(sed -n 's/^name = "\(.*\)"/\1/p' "$out/mcp/pyproject.toml" | head -1)
+  uv pip install -q --python "$venv/bin/python" --reinstall-package "$sdk_dist" --reinstall-package "$mcp_dist" "$out/python" "$out/mcp" >"$out/install.log" 2>&1
   if "$venv/bin/python" -I -c "import $pkg, ${pkg}_mcp" >"$out/import.log" 2>&1 \
     && node --input-type=module -e 'await import(process.argv[1])' "$PWD/$out/typescript/dist/index.js" >>"$out/import.log" 2>&1; then
     imp=ok
@@ -64,7 +66,7 @@ for entry in "${specs[@]}"; do
   # MCP lint: dummy values for every credential variable the SDK reads.
   {
     echo "server:"
-    echo "  command: $PWD/$venv/bin/$pkg-mcp"
+    echo "  command: $PWD/$venv/bin/$mcp_dist"
     echo "  env:"
     grep -rhoE 'environ\.get\("[A-Z0-9_]+"' "$out/python/src" | sed 's/.*("//; s/"//' | sort -u \
       | grep -vE '_(BASE_URL|LOG|OAUTH_TOKEN_URL)$' | sed 's/.*/    &: dummy/'

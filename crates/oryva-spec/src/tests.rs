@@ -916,3 +916,26 @@ components:
         ResponseBody::Json { .. }
     ));
 }
+
+#[test]
+fn ref_to_a_property_of_a_schema_is_parsed_in_place() {
+    let api = ok(
+        "3.0.2",
+        "components:
+  schemas:
+    A:
+      type: object
+      properties:
+        kind: {type: string, enum: [x, y]}
+    B:
+      type: object
+      properties:
+        kind: {$ref: '#/components/schemas/A/properties/kind'}
+        other: {allOf: [{$ref: '#/components/schemas/A/properties/kind'}]}
+",
+    );
+    for f in ["kind", "other"] {
+        assert!(matches!(field_ty(&api, "B", f), TypeRef::Enum { .. }), "{f}");
+    }
+    assert!(api.type_def("AProperties").is_none());
+}

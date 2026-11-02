@@ -75,6 +75,13 @@ fn unesc(s: &str) -> String {
     s.replace("~1", "/").replace("~0", "~")
 }
 
+/// `#/components/schemas/<name>`: the only refs that name a type. Anything deeper, such as
+/// `#/components/schemas/A/properties/b`, is a piece of another schema.
+fn is_component(r: &str) -> bool {
+    r.strip_prefix("#/components/schemas/")
+        .is_some_and(|name| !name.is_empty() && !name.contains('/'))
+}
+
 fn nullable(t: TypeRef) -> TypeRef {
     match t {
         TypeRef::Nullable { .. } | TypeRef::Any => t,
@@ -144,7 +151,7 @@ impl<'a> Ctx<'a> {
                 return invalid(&at, format!("$ref {r:?} does not resolve"));
             };
             match v.get("$ref").and_then(Value::as_str) {
-                Some(next) if next.starts_with('#') && !next.starts_with("#/components/schemas/") => {
+                Some(next) if next.starts_with('#') && !is_component(next) => {
                     (at, r) = (r, next.to_string());
                 }
                 _ => return Ok((v, r)),
@@ -274,7 +281,7 @@ impl<'a> Ctx<'a> {
             let Some(r) = r.as_str() else {
                 return invalid(at, "`$ref` must be a string");
             };
-            if r.starts_with('#') && !r.starts_with("#/components/schemas/") {
+            if r.starts_with('#') && !is_component(r) {
                 // A ref into another part of the document, such as another parameter's
                 // `schema`, has no name of its own, so it is parsed in place.
                 let (target, at) = self.resolve_inline(r, at)?;
@@ -289,7 +296,13 @@ impl<'a> Ctx<'a> {
                 && s.get("properties").is_none()
                 && let Some(r) = only.get("$ref").and_then(Value::as_str)
             {
-                let t = self.schema_ref(r, &format!("{at}/allOf/0"))?;
+                let at = format!("{at}/allOf/0");
+                if r.starts_with('#') && !is_component(r) {
+                    let (target, at) = self.resolve_inline(r, &at)?;
+                    let (node, inner_null) = self.node(target, hint, &at, false)?;
+                    return Ok((node, null || inner_null));
+                }
+                let t = self.schema_ref(r, &at)?;
                 return Ok((Node::Plain(t), null));
             }
             let (mut props, mut required) = (Vec::new(), Vec::new());
