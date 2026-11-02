@@ -1,0 +1,6 @@
+# Used by .github/workflows/action.yml to test the oryva GitHub Action on the ledger fixture.
+spec: ../specs/ledger.yaml
+version: 1.0.0
+targets:
+  python: { out: out/python }
+  typescript: { out: out/typescript }

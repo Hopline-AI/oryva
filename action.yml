@@ -1,0 +1,116 @@
+name: oryva
+description: Regenerate SDKs and an MCP server from an OpenAPI spec, and open a pull request that reports the API changes.
+branding:
+  icon: package
+  color: purple
+
+inputs:
+  config:
+    description: Path to oryva.yml.
+    default: oryva.yml
+  version:
+    description: oryva release to install (a tag such as v0.1.0, or latest), or skip when oryva is already on PATH.
+    default: latest
+  previous-ir:
+    description: Path to one target's committed `.oryva/ir.json`, e.g. sdks/python/.oryva/ir.json. Enables the change report.
+    default: ""
+  current-version:
+    description: The SDKs' current version, so the report can suggest the next one.
+    default: ""
+  fail-on-breaking:
+    description: Fail the run when the spec change is breaking (after opening the pull request).
+    default: "false"
+  create-pr:
+    description: Open or update a pull request with the regenerated code.
+    default: "true"
+  branch:
+    description: Branch for the pull request.
+    default: oryva/regenerate
+  token:
+    description: Token used to download oryva and open the pull request.
+    default: ${{ github.token }}
+
+outputs:
+  breaking:
+    description: "\"true\" when the spec change is breaking."
+    value: ${{ steps.report.outputs.breaking }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install oryva
+      if: inputs.version != 'skip'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64) target=x86_64-unknown-linux-gnu ;;
+          Linux-ARM64) target=aarch64-unknown-linux-gnu ;;
+          macOS-ARM64) target=aarch64-apple-darwin ;;
+          *) echo "::error::oryva has no build for $RUNNER_OS $RUNNER_ARCH"; exit 1 ;;
+        esac
+        tag=""
+        [ "$VERSION" != latest ] && tag="$VERSION"
+        gh release download $tag --repo Hopline-AI/oryva --pattern "oryva-$target.tar.gz" --dir "$RUNNER_TEMP"
+        tar xzf "$RUNNER_TEMP/oryva-$target.tar.gz" -C "$RUNNER_TEMP"
+        echo "$RUNNER_TEMP/oryva-$target" >> "$GITHUB_PATH"
+
+    - name: Install ruff
+      shell: bash
+      run: command -v ruff >/dev/null || pipx install ruff
+
+    - name: Keep the previous API model
+      if: inputs.previous-ir != ''
+      shell: bash
+      env:
+        PREVIOUS_IR: ${{ inputs.previous-ir }}
+      run: |
+        if [ -f "$PREVIOUS_IR" ]; then cp "$PREVIOUS_IR" "$RUNNER_TEMP/oryva-previous-ir.json"; fi
+
+    - name: Generate
+      shell: bash
+      env:
+        CONFIG: ${{ inputs.config }}
+      run: oryva generate --config "$CONFIG"
+
+    - name: Report API changes
+      id: report
+      shell: bash
+      env:
+        PREVIOUS_IR: ${{ inputs.previous-ir }}
+        CURRENT_VERSION: ${{ inputs.current-version }}
+      run: |
+        report="$RUNNER_TEMP/oryva-report.md"
+        breaking=false
+        if [ -f "$RUNNER_TEMP/oryva-previous-ir.json" ]; then
+          set +e
+          oryva diff "$RUNNER_TEMP/oryva-previous-ir.json" "$PREVIOUS_IR" ${CURRENT_VERSION:+--version "$CURRENT_VERSION"} > "$report"
+          rc=$?
+          set -e
+          if [ $rc -eq 2 ]; then cat "$report"; exit 1; fi
+          [ $rc -eq 1 ] && breaking=true
+        else
+          echo "First generation with oryva; no earlier API model to compare against." > "$report"
+        fi
+        echo "breaking=$breaking" >> "$GITHUB_OUTPUT"
+        echo "report=$report" >> "$GITHUB_OUTPUT"
+        cat "$report" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Open a pull request
+      if: inputs.create-pr == 'true'
+      uses: peter-evans/create-pull-request@v8
+      with:
+        token: ${{ inputs.token }}
+        branch: ${{ inputs.branch }}
+        title: Regenerate SDKs from the API spec
+        commit-message: "chore: regenerate SDKs with oryva"
+        body-path: ${{ steps.report.outputs.report }}
+
+    - name: Fail on breaking changes
+      if: inputs.fail-on-breaking == 'true' && steps.report.outputs.breaking == 'true'
+      shell: bash
+      run: |
+        echo "::error::The spec change is breaking; see the report in the job summary."
+        exit 1

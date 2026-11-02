@@ -1,0 +1,53 @@
+name: action
+
+# Runs the GitHub Action in action.yml against the ledger fixture: a first generation, then a
+# breaking spec change that the action must report.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - name: Build oryva
+        run: |
+          cargo build -q -p oryva
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+
+      - name: First generation
+        id: first
+        uses: ./
+        with:
+          version: skip
+          config: fixtures/action/oryva.yml
+          previous-ir: fixtures/action/out/python/.oryva/ir.json
+          create-pr: "false"
+      - name: Outputs exist and the first run is not breaking
+        run: |
+          test -f fixtures/action/out/python/pyproject.toml
+          test -f fixtures/action/out/typescript/package.json
+          test "${{ steps.first.outputs.breaking }}" = false
+
+      - name: Remove a query parameter from the spec
+        run: |
+          sed -i 's/- name: email$/- name: email_address/' fixtures/specs/ledger.yaml
+          grep -q "name: email_address" fixtures/specs/ledger.yaml
+
+      - name: Second generation
+        id: second
+        uses: ./
+        with:
+          version: skip
+          config: fixtures/action/oryva.yml
+          previous-ir: fixtures/action/out/python/.oryva/ir.json
+          current-version: 1.0.0
+          create-pr: "false"
+      - name: The change is reported as breaking, with the next version
+        run: |
+          test "${{ steps.second.outputs.breaking }}" = true
+          grep -q "param email removed" "$RUNNER_TEMP/oryva-report.md"
+          grep -q "1.0.0 -> 2.0.0" "$RUNNER_TEMP/oryva-report.md"
