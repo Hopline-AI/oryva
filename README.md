@@ -37,6 +37,9 @@ Needs Rust 1.90 or later, and [ruff](https://docs.astral.sh/ruff/) on `PATH` for
 cargo install --path crates/oryva
 ```
 
+Release archives for macOS (Apple silicon) and Linux (x86_64, arm64) will be on the GitHub releases
+page once the first version is tagged.
+
 ## Use
 
 ```sh
@@ -82,6 +85,36 @@ when there are breaking changes, so CI can gate on it:
 ```sh
 oryva diff main-openapi.yaml openapi.yaml --version 1.4.0
 ```
+
+## GitHub Action
+
+Regenerate the SDKs whenever the spec changes, and get a pull request whose description is the
+`oryva diff` report:
+
+```yaml
+on:
+  push:
+    branches: [main]
+    paths: [openapi.yaml, oryva.yml]
+jobs:
+  sdks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Hopline-AI/oryva@v0.1.0
+        with:
+          config: oryva.yml
+          previous-ir: sdks/python/.oryva/ir.json   # any target's committed API model
+          current-version: 1.4.0                     # optional: suggests the next version
+          fail-on-breaking: "false"
+```
+
+The action installs oryva and ruff, regenerates every target in the config, writes the change
+report to the job summary, and opens or updates a pull request on `oryva/regenerate`. Its
+`breaking` output is `"true"` for a breaking change.
 
 ## Development
 

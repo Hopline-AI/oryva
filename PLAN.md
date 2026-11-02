@@ -38,6 +38,17 @@ A senior engineer could ship oryva as a product when all of this holds. Everythi
    macOS and Linux with install instructions; docs for the config, spec extensions and CI setup;
    a license (the user's call).
 
+Status, 2026-11-02:
+
+- 1 (inputs): 7 large specs pass; widening to 11+ with runtime imports and MCP lint is in progress.
+- 2 (outputs): done.
+- 3 (publish-ready SDKs): not started.
+- 4 (maintenance): config, safe regeneration, `oryva diff` and the GitHub Action are done. The
+  action's pull-request step is exercised only by users' runs; CI tests it with `create-pr: false`.
+- 5 (agent layer): `oryva eval` done; `llms.txt` not started.
+- 6 (project): CI and the release workflow are done; the first tagged release and the license
+  are open.
+
 v1.x: Go, Java, Kotlin, C#, PHP and Ruby; code-mode MCP; Terraform and CLI targets; WebSockets;
 `stainless.yml` import; deriving a spec from an existing SDK.
 
