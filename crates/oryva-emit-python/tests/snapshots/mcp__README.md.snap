@@ -10,7 +10,6 @@ API method, named `<resource>_<method>`:
 
 - `customers_list`: List customers, newest first
 - `customers_create`: Create a customer
-- `customers_search`: Search customers by name
 - `customers_get`: Fetch one customer
 - `customers_update`: Change a customer's name, email or metadata
 - `customers_delete`: Delete a customer and all their unpaid invoices

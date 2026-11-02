@@ -483,7 +483,7 @@ async def mcp_checks():
     async with Client(params) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
         expected = {
-            "customers_list", "customers_create", "customers_search", "customers_get", "customers_update", "customers_delete",
+            "customers_list", "customers_create", "customers_get", "customers_update", "customers_delete",
             "invoices_list", "invoices_create", "invoices_get", "invoices_finalize", "invoices_void", "invoices_download_pdf",
             "payments_list", "payments_get", "refunds_create", "files_upload", "files_upload_raw", "events_stream",
         }  # fmt: skip

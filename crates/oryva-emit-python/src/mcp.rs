@@ -1,6 +1,6 @@
 //! Builds the template contexts for the Python MCP server.
 
-use oryva_ir::{Api, Method, ResponseBody, TypeRef};
+use oryva_ir::{Api, Method, Resource, ResponseBody, TypeRef};
 use serde::Serialize;
 
 use crate::Options;
@@ -38,21 +38,24 @@ pub struct ToolItem {
     pub returns: String,
 }
 
+/// The operations that become tools. Deprecated ones stay in the SDK, where they warn, but an agent
+/// is better off not seeing them: it picks them as readily as the current ones.
+fn exposed(api: &Api) -> impl Iterator<Item = (&Resource, &Method)> {
+    api.resources
+        .iter()
+        .flat_map(|r| r.methods.iter().map(move |m| (r, m)))
+        .filter(|(_, m)| !m.deprecated)
+}
+
 pub fn ctx(api: &Api, opts: &Options) -> McpCtx {
     let mut uses = Uses::default();
     uses.typing
         .extend(["Annotated", "Any", "Dict", "Iterator", "Optional"]);
     let mut tools = Vec::new();
-    for r in &api.resources {
-        for m in &r.methods {
-            tools.push(tool(api, &r.name, m, &mut uses));
-        }
+    for (r, m) in exposed(api) {
+        tools.push(tool(api, &r.name, m, &mut uses));
     }
-    let has_binary = api
-        .resources
-        .iter()
-        .flat_map(|r| &r.methods)
-        .any(crate::py::is_binary);
+    let has_binary = exposed(api).any(|(_, m)| crate::py::is_binary(m));
     let mut stdlib = Vec::new();
     if has_binary {
         stdlib.extend(["import mimetypes", "import os", "import tempfile"].map(String::from));
@@ -104,11 +107,7 @@ pub fn ctx(api: &Api, opts: &Options) -> McpCtx {
         stdlib,
         third_party: third.into_iter().map(|(_, line)| line).collect(),
         has_binary,
-        has_pages: api
-            .resources
-            .iter()
-            .flat_map(|r| &r.methods)
-            .any(|m| m.pagination.is_some()),
+        has_pages: exposed(api).any(|(_, m)| m.pagination.is_some()),
         tools,
     }
 }

@@ -159,31 +159,6 @@ def customers_create(
 
 
 @server.tool(
-    name="customers_search",
-    title="Search customers by name",
-    annotations=ToolAnnotations(
-        title="Search customers by name",
-        read_only_hint=True,
-        destructive_hint=False,
-        idempotent_hint=True,
-    ),
-    structured_output=False,
-)
-def customers_search(
-    q: str,
-) -> str:
-    """Search customers by name.
-
-    Use `customers.list` with `email` instead.
-
-    Deprecated: this operation may be removed.
-    """
-    with _tool_errors():
-        result = _sdk().customers.search(q=q)
-    return _to_json(result)
-
-
-@server.tool(
     name="customers_get",
     title="Fetch one customer",
     annotations=ToolAnnotations(
