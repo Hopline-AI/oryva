@@ -133,6 +133,24 @@ impl<'a> Ctx<'a> {
         invalid(&at, "`$ref` chain is too deep; it probably loops")
     }
 
+    /// Follow local `$ref`s that point outside `#/components/schemas`, up to the first value that
+    /// is not one.
+    fn resolve_inline(&self, r: &str, at: &str) -> Result<(&'a Value, String), SpecError> {
+        let (mut r, mut at) = (r.to_string(), at.to_string());
+        for _ in 0..16 {
+            let Some(v) = self.root.pointer(&r[1..]) else {
+                return invalid(&at, format!("$ref {r:?} does not resolve"));
+            };
+            match v.get("$ref").and_then(Value::as_str) {
+                Some(next) if next.starts_with('#') && !next.starts_with("#/components/schemas/") => {
+                    (at, r) = (r, next.to_string());
+                }
+                _ => return Ok((v, r)),
+            }
+        }
+        invalid(&at, "`$ref` chain is too deep; it probably loops")
+    }
+
     fn schema_ref(&self, r: &str, at: &str) -> Result<TypeRef, SpecError> {
         self.lookup(r, "schemas", at)?;
         let name = pascal(&unesc(&r["#/components/schemas/".len()..]));
@@ -254,6 +272,12 @@ impl<'a> Ctx<'a> {
             let Some(r) = r.as_str() else {
                 return invalid(at, "`$ref` must be a string");
             };
+            if r.starts_with('#') && !r.starts_with("#/components/schemas/") {
+                // A ref into another part of the document, such as another parameter's
+                // `schema`, has no name of its own, so it is parsed in place.
+                let (target, at) = self.resolve_inline(r, at)?;
+                return self.node(target, hint, &at, false);
+            }
             return Ok((Node::Plain(self.schema_ref(r, at)?), false));
         }
         let mut null = s.get("nullable").and_then(Value::as_bool).unwrap_or(false);

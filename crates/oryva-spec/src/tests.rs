@@ -872,3 +872,23 @@ fn names_that_remove_things_are_destructive_on_any_write_method() {
     assert!(!destructive("removed"), "a GET only reads");
     assert!(!destructive("send"));
 }
+
+#[test]
+fn ref_into_a_parameters_schema_is_parsed_in_place() {
+    let api = ok(
+        "3.0.2",
+        "components:
+  parameters:
+    kind: {name: kind, in: query, schema: {type: string, enum: [a, b]}}
+  schemas:
+    Record:
+      type: object
+      properties:
+        kind: {$ref: '#/components/parameters/kind/schema'}
+",
+    );
+    assert!(matches!(
+        field_ty(&api, "Record", "kind"),
+        TypeRef::Enum { .. }
+    ));
+}
