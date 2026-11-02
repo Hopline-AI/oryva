@@ -850,3 +850,25 @@ fn spec_larger_than_the_yaml_node_budget_parses() {
     );
     assert_eq!(api.types.len(), 1);
 }
+
+#[test]
+fn names_that_remove_things_are_destructive_on_any_write_method() {
+    let api = ok(
+        "3.1.0",
+        "paths:
+  /msgs/bulk-delete:
+    post: {operationId: bulk_delete, tags: [msgs], responses: {'204': {description: ok}}}
+  /msgs/removed:
+    get: {operationId: removed, tags: [msgs], responses: {'200': {description: ok}}}
+  /msgs:
+    post: {operationId: send, tags: [msgs], responses: {'200': {description: ok}}}
+",
+    );
+    let destructive = |m: &str| {
+        let r = &api.resources[0];
+        r.methods.iter().find(|x| x.name == m).unwrap().agent.destructive
+    };
+    assert!(destructive("bulk_delete"));
+    assert!(!destructive("removed"), "a GET only reads");
+    assert!(!destructive("send"));
+}

@@ -68,6 +68,7 @@ impl<'a> Ctx<'a> {
                 let hint = format!("{}{}", pascal(&resource), pascal(&name));
                 let (response, errors) = self.responses(op, &hint, &at)?;
                 let params = self.params(item, &item_at, op, &at, &hint)?;
+                let agent = agent(op, http, &resource, &name, &at)?;
                 let method = Method {
                     pagination: self.pagination(op, &params, &response, &at)?,
                     params,
@@ -83,7 +84,7 @@ impl<'a> Ctx<'a> {
                         .get("deprecated")
                         .and_then(Value::as_bool)
                         .unwrap_or(false),
-                    agent: agent(op, http, &at)?,
+                    agent,
                 };
                 match resources.iter_mut().find(|r| r.name == resource) {
                     Some(r) => r.methods.push(method),
@@ -508,11 +509,28 @@ fn method_name(
     .into())
 }
 
-/// Defaults from the HTTP method, then `x-oryva-agent` keys override one by one.
-fn agent(op: &Value, http: HttpMethod, at: &str) -> Result<AgentNotes, SpecError> {
+/// A tool whose name says it removes something is destructive whatever its HTTP method, e.g.
+/// `POST /channels/{id}/messages/bulk-delete`.
+const DESTRUCTIVE_WORDS: [&str; 6] = ["delete", "remove", "cancel", "refund", "revoke", "drop"];
+
+fn names_destruction(resource: &str, method: &str) -> bool {
+    format!("{resource}_{method}")
+        .split('_')
+        .any(|w| DESTRUCTIVE_WORDS.contains(&w))
+}
+
+/// Defaults from the HTTP method and name, then `x-oryva-agent` keys override one by one.
+fn agent(
+    op: &Value,
+    http: HttpMethod,
+    resource: &str,
+    method: &str,
+    at: &str,
+) -> Result<AgentNotes, SpecError> {
     let mut notes = AgentNotes {
         read_only: http == HttpMethod::Get,
-        destructive: http == HttpMethod::Delete,
+        destructive: http == HttpMethod::Delete
+            || (http != HttpMethod::Get && names_destruction(resource, method)),
         idempotent: matches!(http, HttpMethod::Get | HttpMethod::Put | HttpMethod::Delete),
         ..Default::default()
     };
