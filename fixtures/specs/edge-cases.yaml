@@ -112,6 +112,19 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ConflictError"}
+  # Resources named like the client's own `Environment` type and the client class.
+  /environment:
+    get:
+      tags: [environment]
+      operationId: environment_list
+      responses:
+        "200": {description: ok}
+  /edge:
+    get:
+      tags: [edge]
+      operationId: edge_list
+      responses:
+        "200": {description: ok}
   /workflows:
     get:
       tags: [workflows]

@@ -342,6 +342,62 @@ expression: "parse(\"edge-cases.yaml\")"
       ]
     },
     {
+      "name": "environment",
+      "description": null,
+      "methods": [
+        {
+          "name": "list",
+          "http_method": "GET",
+          "path": "/environment",
+          "summary": null,
+          "description": null,
+          "params": [],
+          "body": null,
+          "response": {
+            "kind": "empty"
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "edge",
+      "description": null,
+      "methods": [
+        {
+          "name": "list",
+          "http_method": "GET",
+          "path": "/edge",
+          "summary": null,
+          "description": null,
+          "params": [],
+          "body": null,
+          "response": {
+            "kind": "empty"
+          },
+          "pagination": null,
+          "errors": [],
+          "deprecated": false,
+          "agent": {
+            "read_only": true,
+            "destructive": false,
+            "idempotent": true,
+            "hint": null,
+            "examples": []
+          }
+        }
+      ]
+    },
+    {
       "name": "workflows",
       "description": null,
       "methods": [

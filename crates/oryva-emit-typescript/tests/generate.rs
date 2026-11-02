@@ -122,6 +122,9 @@ fn edge_cases_type_check() {
     assert!(workflows.contains("create(params: WorkflowsCreateParams, options"));
     // A resource whose name is also a model gets a `Resource` suffix.
     assert!(workflows.contains("export class WorkflowsResource"));
+    // Resources named like the client's `Environment` type or the client class get the suffix too.
+    assert!(read("resources/environment.ts").contains("export class EnvironmentResource"));
+    assert!(read("resources/edge.ts").contains("export class EdgeResource"));
     // A model named like an error class does not make the barrel ambiguous.
     assert!(read("index.ts").contains("export { ConflictError } from './errors.js';"));
     // `*/` cannot end a doc comment early.

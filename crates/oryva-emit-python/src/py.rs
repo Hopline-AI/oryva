@@ -112,7 +112,8 @@ pub fn field_ident(ident: &str) -> String {
 /// The class for a resource. A component schema of the same name wins the plain name.
 pub fn resource_class(api: &Api, name: &str) -> String {
     let class = pascal(name);
-    if api.type_def(&class).is_some() {
+    // `Environment` and the client class are defined next to the resource imports.
+    if api.type_def(&class).is_some() || class == "Environment" || class == pascal(&api.name) {
         format!("{class}Resource")
     } else {
         class

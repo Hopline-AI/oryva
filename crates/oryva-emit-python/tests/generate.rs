@@ -177,4 +177,7 @@ fn edge_cases_compile() {
     assert!(items.contains("_quote(quote, safe="));
     // A resource whose name is also a model gets a `Resource` suffix.
     assert!(read("resources/workflows.py").contains("class WorkflowsResource:"));
+    // So does one named like the client's `Environment` type or the client class.
+    assert!(read("resources/environment.py").contains("class EnvironmentResource:"));
+    assert!(read("resources/edge.py").contains("class EdgeResource:"));
 }
