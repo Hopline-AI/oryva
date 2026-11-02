@@ -27,7 +27,11 @@ dir=target/real-specs
 mkdir -p "$dir"
 cargo build -q -p oryva
 venv=$dir/venv
-[ -x "$venv/bin/mypy" ] || { uv venv -q --python 3.12 "$venv" && uv pip install -q --python "$venv/bin/python" httpx pydantic mypy; }
+# The MCP package is type-checked too, so the venv needs `mcp` before the first spec runs.
+"$venv/bin/python" -c "import httpx, pydantic, mypy, mcp" 2>/dev/null || {
+  [ -x "$venv/bin/python" ] || uv venv -q --python 3.12 "$venv"
+  uv pip install -q --python "$venv/bin/python" httpx pydantic mypy mcp
+}
 tsc=(npx --yes -p typescript@7.0.2 tsc)
 
 failed=0
