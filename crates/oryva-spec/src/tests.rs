@@ -984,3 +984,30 @@ fn a_default_that_contradicts_the_type_is_dropped() {
     assert_eq!(default("region"), None);
     assert_eq!(default("size"), Some(serde_json::json!(3)));
 }
+
+#[test]
+fn a_deprecation_notice_in_the_description_marks_the_operation_deprecated() {
+    let api = ok(
+        "3.0.3",
+        "paths:
+  /a:
+    get:
+      operationId: old
+      tags: [t]
+      description: '<p>This method is  deprecated and will be removed.</p>'
+      responses: {'200': {description: ok}}
+  /b:
+    get:
+      operationId: current
+      tags: [t]
+      description: 'The `team` filter is deprecated.'
+      responses: {'200': {description: ok}}
+",
+    );
+    let deprecated = |n: &str| {
+        let ms = &api.resources[0].methods;
+        ms.iter().find(|m| m.name == n).unwrap().deprecated
+    };
+    assert!(deprecated("old"));
+    assert!(!deprecated("current"));
+}

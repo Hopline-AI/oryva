@@ -83,7 +83,8 @@ impl<'a> Ctx<'a> {
                     deprecated: op
                         .get("deprecated")
                         .and_then(Value::as_bool)
-                        .unwrap_or(false),
+                        .unwrap_or(false)
+                        || says_deprecated(&string_at(op, "description").unwrap_or_default()),
                     agent,
                 };
                 match resources.iter_mut().find(|r| r.name == resource) {
@@ -507,6 +508,29 @@ fn method_name(
         HttpMethod::Delete => "delete",
     }
     .into())
+}
+
+/// Some specs announce a deprecation in the description only, as in "<p>This method is deprecated
+/// and will be removed soon.</p>", without the `deprecated` flag.
+fn says_deprecated(description: &str) -> bool {
+    let mut text = String::new();
+    let mut in_tag = false;
+    for c in description.to_lowercase().chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    ["endpoint", "method", "operation", "api"]
+        .iter()
+        .any(|noun| {
+            ["is", "has been", "was"]
+                .iter()
+                .any(|verb| text.contains(&format!("this {noun} {verb} deprecated")))
+        })
 }
 
 /// A tool whose name says it removes something is destructive whatever its HTTP method, e.g.
