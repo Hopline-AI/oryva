@@ -222,7 +222,7 @@ fn auth(doc: &Value, name: &str) -> Result<Vec<Auth>, SpecError> {
                     return invalid(
                         &at,
                         format!(
-                            "requirements that combine schemes ({keys:?}) are not supported; list each scheme as its own alternative"
+                            "requirements that combine schemes ({keys:?}) are not supported, since credentials that must be sent together cannot be modelled yet; edit `security` so each scheme is its own alternative (the generated client sends the first one it has credentials for)"
                         ),
                     );
                 }

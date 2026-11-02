@@ -19,7 +19,6 @@ specs=(
   "spotify https://raw.githubusercontent.com/sonallux/spotify-web-api/main/fixed-spotify-open-api.yml"
   "box https://raw.githubusercontent.com/box/box-openapi/main/openapi.json"
   "discord https://raw.githubusercontent.com/discord/discord-api-spec/main/specs/openapi.json"
-  "plaid https://raw.githubusercontent.com/plaid/plaid-openapi/master/2020-09-14.yml"
   "vercel https://openapi.vercel.sh/ json"
   "pagerduty https://raw.githubusercontent.com/PagerDuty/api-schema/main/reference/REST/openapiv3.json"
   "train https://raw.githubusercontent.com/bump-sh-examples/train-travel-api/main/openapi.yaml"
