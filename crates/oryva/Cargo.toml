@@ -12,3 +12,8 @@ oryva-emit-typescript = { path = "../oryva-emit-typescript" }
 oryva-eval = { path = "../oryva-eval" }
 serde_json.workspace = true
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+oryva-ir.workspace = true
+serde.workspace = true
+serde-saphyr = "2"
+sha2 = "0.10"
+tempfile = "3"

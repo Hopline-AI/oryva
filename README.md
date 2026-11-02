@@ -49,6 +49,40 @@ A task file names the MCP server to start and the tasks to run; see `fixtures/ev
 Specs can carry optional `x-oryva-*` extensions for pagination, idempotency, webhook signing,
 environment names and agent hints; `CLAUDE.md` lists them.
 
+## Config, regeneration and CI
+
+`oryva generate` with no arguments reads `./oryva.yml` (`--config <path>` reads another). Paths
+in it are relative to the file; unknown keys are errors.
+
+```yaml
+spec: openapi.yaml
+name: ledger              # optional; overrides x-oryva-name
+version: 1.4.0            # optional SDK version; default comes from the spec
+targets:                  # optional; default: all three under out/<name>/
+  python: { out: sdks/python, package: ledger, dist: ledger-sdk }
+  mcp: { out: sdks/mcp }
+  typescript: { out: sdks/typescript, package: "@acme/ledger" }
+```
+
+A target you leave out is skipped. Each output directory gets a `.oryva/manifest.json` listing
+the files oryva wrote and their hashes, and `.oryva/ir.json`, the API model used. Regeneration:
+
+- deletes generated files the new output no longer has, and any directory left empty;
+- aborts, before writing anything, if you edited a generated file. Move custom code into files
+  oryva doesn't generate, or rerun with `--force` to overwrite your edits;
+- never touches a file the manifest doesn't list. If oryva needs that path, it aborts and names it.
+
+Commit `.oryva/` with the SDK so the next run can report what changed.
+
+`oryva diff <old> <new> [--version <current>] [--json]` compares two specs, or `ir.json` files,
+and prints a markdown report of breaking, minor and patch changes. With `--version` it also
+prints the next semver version (breaking bumps the major, or the minor while on 0.x). It exits 1
+when there are breaking changes, so CI can gate on it:
+
+```sh
+oryva diff main-openapi.yaml openapi.yaml --version 1.4.0
+```
+
 ## Development
 
 - `scripts/verify.sh` is the definition of done: format, lints and tests.
